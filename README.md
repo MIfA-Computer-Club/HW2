@@ -13,7 +13,7 @@ In this assignment, you will be designing your own aperture photometry packages.
 ------
 1) Load the ```FITS``` file into ```ds9``` with the included region file to visualize which galaxies I have selected for this task.  You will notice that the region file contains image coordinates, not ```RA``` and ```DEC``` (because I do not trust the astrometry/```WCS``` from the STScI archive).  However, the coordinates in the region do not necessarily line up with the centers of the objects, so be careful.
   * The coordinates in the region file are not necessarily at the centers of the galaxies.  You should boot up ```ds9```, determine the centers of the objects, and then write a new region file.  OR...
-  * Bonus: Write your own centroiding package.  This can be as simple as finding the maximum pixel in a box, as complicated as least-assymetric Gaussian fitting, or anything in between.
+  * Bonus: Write your own centroiding package.  This can be as simple as finding the maximum pixel in a box, as complicated as least-asymmetric Gaussian fitting, or anything in between.
   * Read the ```FITS``` file and the coordinates into ```python``` (you are welcome to use pre-existing packages for the latter, like ```pyregions```), but do not hard-code anything.
   * Use ```matplotlib.pyplot``` to display a 'swatch' of each galaxy.  Warning:  if using ```imshow```, be sure to set ```origin = 'lower'```.  ```ds9``` indexes 2D-arrays from the bottom-left, but ```numpy``` goes from the top-left.  When displaying your swatches, make sure the images are oriented the same as they are in ```ds9``` (and not transposed).
 
