@@ -25,3 +25,5 @@ In this assignment, you will be designing your own aperture photometry packages.
   * Bonus+:  From a contour map, choose bins based on elliptical isophotal fitting.
 
 4) For each of your profiles, fit a Sersic function and label on the plot the best-fitting Sersic index.
+
+5) Calculate the half-right radius (in ```arcsec```) from your radial profile.
