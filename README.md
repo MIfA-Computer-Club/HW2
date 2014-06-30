@@ -20,6 +20,7 @@ In this assignment, you will be designing your own aperture photometry packages.
 2) For each galaxy, perform basic aperture photometry.
   * Choose a circular aperture and calculate flux counts per aperture area (```counts/pixel^2```).  Subtract from this number the background counts (sky flux), which you can calculate by choosing a region of the sky next to the source.  Ordinarily, an annulus around the object is chosen for the sky region, but some of these galaxies are very close to other sources, so be careful. 
   * Using the plate scale, pixel scale, and pixel size keywords from the header, translate your flux counts into ```counts/arcsec^2```.  (We will not worry about flux to magnitude conversion yet, because I cannot find a reliable zeropoint for this instrument/filter).
+  * Bonus:  Deal with partial pixel counts.
 
 3) Make a radial, azimuthally-averaged, profile of each galaxy.
   * Choose an appropriate size for your circular bins, and plot ```counts/arcsec^2``` vs. radial distance from the center of the source (in ```arcsec```).  For each bin, calculate (and plot on your profile) the error as the standard deviation within the bin.
