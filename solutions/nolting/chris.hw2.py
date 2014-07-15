@@ -44,7 +44,19 @@ def centroid(center_xy, radius,dat):
 	
 	for x in range(int(round(radius))):
 		if (dat[newCenter[1],newCenter[0]+x] - background) > (maximum-background)/math.e**3:
-			newRadius = x+1
+			newRadius1 = x+1
+		
+		if (dat[newCenter[1],newCenter[0]-x] - background) > (maximum-background)/math.e**3:
+			newRadius2 = x+1
+		
+		if (dat[newCenter[1]+x,newCenter[0]] - background) > (maximum-background)/math.e**3:
+			newRadius3 = x+1
+		
+		if (dat[newCenter[1]-x,newCenter[0]] - background) > (maximum-background)/math.e**3:
+			newRadius4 = x+1
+		
+	newRadius = (newRadius1 + newRadius2 + newRadius3 + newRadius4)/4.0
+	print 'newRadius is ', newRadius
 	return newCenter, newRadius
 
 def main():
