@@ -26,8 +26,8 @@ class CircularAperture(object):
         Initialize the `image` property. Default is None.
     label : string, optional
         Initialize the `label` attribute. Default is None.
-    ndiv : int, optional
-        Initialize the `ndiv` attribute. Default is 1.
+    nsub : int, optional
+        Initialize the `nsub` attribute. Default is 1.
 
     Attributes
     ----------
@@ -55,9 +55,10 @@ class CircularAperture(object):
     weights
     label : string
         Region label.
-    ndiv : int
-        Number of times to divide each border pixel in the x and y
-        directions. The total number of samples in a pixel is ``ndiv**2``.
+    nsub : int
+        Number of subpixels (per side) in which to sample each border pixel
+        when calculating weights for partial pixels in the aperture. The
+        total number of subpixel samples for a border pixel is ``nsub**2``.
 
     Methods
     -------
@@ -65,11 +66,11 @@ class CircularAperture(object):
 
     """
 
-    def __init__(self, xy, r, image=None, label=None, ndiv=1):
+    def __init__(self, xy, r, image=None, label=None, nsub=1):
         self.parameters = [xy[0], xy[1], r]
         self.image = image
         self.label = label
-        self.ndiv = ndiv  # make a property?
+        self.nsub = nsub  # make a property?
 
     @property
     def parameters(self):
@@ -83,7 +84,7 @@ class CircularAperture(object):
     @parameters.setter
     def parameters(self, parameters):
         self._parameters = parameters
-        self._reset(image=True, allcache=True)
+        self._reset()
 
     @property
     def x(self):
@@ -221,7 +222,7 @@ class CircularAperture(object):
     @image.setter
     def image(self, arr):
         self._image = arr
-        self._reset(image=True, allcache=True)
+        self._reset()
 
     @property
     def pixels(self):
@@ -234,68 +235,77 @@ class CircularAperture(object):
         """
         return self._pixels
 
-    @property
-    def weights(self):
-        """Fraction of each pixel's area that is within the aperture.
-
-        Areas for partial pixels along the aperture border are approximated
-        by increasing the grid resolution so that each border pixel is
-        sampled by ``ndiv**2`` sub pixels.
-
-        """
-        if self._weights is None:
-            if self.image is None:
-                weights = None
-            else:
-                # Distances from the center of the circle to the pixel
-                # centers, in pixel coordinates.
-                # Add 0.5 to move from the edge to the center, add another
-                # 0.5 to convert array coords into pixel coords
-                xcmin, xcmax = self.jmin+1, self.jmax+1
-                ycmin, ycmax = self.imin+1, self.imax+1
-                # Add 1 to include the endpoint; use vectors and
-                # broadcasting rules to save memory
-                dx = np.arange(xcmin, xcmax+1).reshape(1, -1) - self.x
-                dy = np.arange(ycmin, ycmax+1).reshape(-1, 1) - self.y
-
-                # True where pixel center is within r of circle center
-                weights = dx**2 + dy**2 <= self.r**2
-
-                # Border pixels
-                ###border = weights & ((dx+1)**2 + (dy+1)**2 > self.r**2)
-
-                # Partial pixels
-
-            self._weights = weights.astype('float')
-        else:
-            weights = self._weights
-
-        return weights
-
-    def _reset(self, image=False, allcache=False, centroid=False,
-               weights=False):
+    def _reset(self):
         """Reset various attributes so that they are consistent with the
         current `x`, `y`, `r`, and `image`.
 
         """
-        # Reset view into image array
+        # Reset the view into the image array
         try:
-            self._image
+            self.image
         except AttributeError:
             # self._image does not exist yet
             pass
         else:
-            if image:
-                if self._image is None:
-                    self._pixels = None
-                else:
-                    self._pixels = self._image[self.ijrange]
+            if self.image is None:
+                self._pixels = None
+            else:
+                self._pixels = self.image[self.ijrange]
 
-        # Reset caches
-        if weights or allcache:
-            self._weights = None
-        if centroid or allcache:
-            self._centroid = None
+    def weights(self):
+        """Fraction of each pixel's area that is within the aperture.
+
+        Areas for partial pixels along the aperture border are approximated
+        by sampling each border pixel with ``nsub**2`` subpixels.
+
+        Returns
+        -------
+        array
+            Weights from 0 to 1, same shape as `pixels`.
+
+        """
+        if self.pixels is None:
+            weights = None
+        else:
+            # Pixel centers in pixel coordinates; add 0.5 for pixel center,
+            # add another 0.5 for array-pixel coord conversion
+            xcmin, xcmax = self.jmin+1, self.jmax+1
+            ycmin, ycmax = self.imin+1, self.imax+1
+            xc = np.arange(xcmin, xcmax+1).reshape(1, -1)  # Cheaper than full grid
+            yc = np.arange(ycmin, ycmax+1).reshape(-1, 1)
+
+            # Distances from the circle center
+            dx, dy = xc - self.x, yc - self.y
+            r = np.sqrt(dx**2 + dy**2)
+
+            # Pixels with centers within r of circle center
+            weights = (r <= self.r).astype('float')
+
+            # Partial pixels
+            if self.nsub > 1:
+                # Border pixels: any pixel with distance within sqrt(0.5)
+                # of r; expand dimensions for later broadcasting
+                i, j = np.where(np.abs(r - self.r) <= np.sqrt(0.5))
+                i, j = i[:,None,None], j[:,None,None]
+
+                # Generic subpixel grid
+                gridx = (np.arange(self.nsub).reshape(1, -1) + 0.5) / self.nsub
+                gridy = (np.arange(self.nsub).reshape(-1, 1) + 0.5) / self.nsub
+
+                # Centers of subpixels
+                xsub = gridx + self.jmin + j + 0.5  # (len(i), 1, nsub)
+                ysub = gridy + self.imin + i + 0.5  # (len(i), nsub, 1)
+
+                # Distances from circle center
+                dxsub, dysub = xsub - self.x, ysub - self.y
+                rsub = np.sqrt(dxsub**2 + dysub**2)  # (len(i), nsub, nsub)
+
+                # New pixel weights
+                i, j = i[:,0,0], j[:,0,0]
+                sumkwargs = dict(axis=(1, 2), dtype='float')
+                weights[i,j] = np.sum(rsub <= self.r, **sumkwargs) / self.nsub**2
+
+        return weights
 
     def centroid(self, adjust=False):
         """Find the centroid of the source in the aperture.
@@ -311,17 +321,13 @@ class CircularAperture(object):
             x and y pixel coordinates of the centroid of the source.
 
         """
-        if self._centroid is None:
-            if self.image is None:
-                xyc = None
-            else:
-                xyc = calc_centroid(self.pixels)
-            self._centroid = xyc
+        if self.pixels is None:
+            xyc = None
         else:
-            xyc = self._centroid
+            xyc = calc_centroid(self.pixels, weights=self.weights())
 
         if adjust and xyc is not None:
-            self.xy = xyc
+            self.xy = list(xyc)
 
         return xyc
 
@@ -394,38 +400,80 @@ def from_region_file(filename):
     return aperture_list
 
 
-def calc_centroid():
-    pass
+def calc_centroid(img, weights=None, xc=None, yc=None):
+    """Calculate the centroid of a source.
+
+    The centroid is calculated from the flux-weighted positions of the
+    marginal distributions for x and y.
+
+    Parameters
+    ----------
+    img : array
+        Image of the source as a 2d array.
+    weights : array, optional
+        Array of weights (from 0 to 1) for the pixels in `img`. Default is
+        None (no weighting).
+    xyc : tuple, optional
+        Initial guess for x and y coordinates of the centroid. Default is
+        to use the center of `img`.
+
+    Returns
+    -------
+    tuple
+        x and y coordinates, with respect to `img`, of the centroid.
+
+    """
+    # Marginal distributions
+    if weights is None:
+        weights = 1
+    zx = np.sum(img * weights, axis=0)
+    zy = np.sum(img * weights, axis=1)
+    zx, zy = zx - zx.min(), zy - zy.min()
+
+    # x and y coordinates of pixel centers
+    x, y = np.arange(zx.size) + 1, np.arange(zy.size) + 1
+
+    # Flux-weighted x and y
+    xc, yc = 1, 1
+    niter = 10
+    xc = x[x.size/2] if xc is None else xc
+    yc = y[y.size/2] if yc is None else yc
+    dx = np.sum((x - xc) * zx, dtype='float') / np.sum(zx)
+    dy = np.sum((y - yc) * zy, dtype='float') / np.sum(zy)
+    xc, yc = xc + dx, yc + dy
+
+    return (xc, yc)
 
 
 
 import astropy.io.fits
 
-imgfile = '/Users/Jake/Research/code/computer_club/cc2.0/HW2/POSIIF_Coma.fits'
+imgfile = '/Users/Jake/Research/code/computer_club/HW2/POSIIF_Coma.fits'
 data = astropy.io.fits.getdata(imgfile)
 
 
-regfile = '/Users/Jake/Research/code/computer_club/cc2.0/HW2/POSIIF_Coma.reg'
+regfile = '/Users/Jake/Research/code/computer_club/HW2/POSIIF_Coma.reg'
 aperture_list = from_region_file(regfile)
 for aperture in aperture_list:
     aperture.image = data
 
 
-
-plt.close()
-X = np.linspace(a.xmin, a.xmax, 1000)
-Y1 = np.sqrt(a.r**2 - (X-a.x)**2) + a.y
-Y2 = -np.sqrt(a.r**2 - (X-a.x)**2) + a.y
-extent = (a.jmin+0.5, a.jmax+1.5, a.imin+0.5, a.imax+1.5)
-z = weights.astype('float') + border.astype('float')
-plt.imshow(z, origin='lower', interpolation='nearest', extent=extent)
-plt.plot(np.hstack((X, X[::-1])), np.hstack((Y1, Y2[::-1])), 'g-')
-plt.plot(a.x, a.y, 'gx')
-xl = np.arange(a.jmin+0.5, a.jmax+1.5)
-yl = np.arange(a.imin+0.5, a.imax+1.5)
-plt.vlines(xl, extent[2], extent[3])
-plt.hlines(yl, extent[0], extent[1])
-plt.axis(extent)
+a = aperture_list[2]
+self = a
+def testplot(arr):
+    plt.cla()
+    X = np.linspace(a.xmin, a.xmax, 1000)
+    Y1 = np.sqrt(a.r**2 - (X-a.x)**2) + a.y
+    Y2 = -np.sqrt(a.r**2 - (X-a.x)**2) + a.y
+    extent = (a.jmin+0.5, a.jmax+1.5, a.imin+0.5, a.imax+1.5)
+    plt.imshow(arr, origin='lower', interpolation='nearest', extent=extent)
+    plt.plot(np.hstack((X, X[::-1])), np.hstack((Y1, Y2[::-1])), 'g-')
+    plt.plot(a.x, a.y, 'gx')
+    xl = np.arange(a.jmin+0.5, a.jmax+1.5)
+    yl = np.arange(a.imin+0.5, a.imax+1.5)
+    plt.vlines(xl, extent[2], extent[3])
+    plt.hlines(yl, extent[0], extent[1])
+    plt.axis(extent)
 
 # 1b. Plot a "swatch" of each source.
 
