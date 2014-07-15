@@ -27,6 +27,7 @@ Functions
 
 """
 import numpy as np
+import scipy.optimize
 
 
 class CircularAperture(object):
@@ -269,13 +270,11 @@ class CircularAperture(object):
         if self.section is None:
             weights = None
         else:
-            # Pixel centers in pixel coordinates
-            xmin, xmax = self.jmin+0.5, self.jmax+0.5  # pixel coords of edges
-            ymin, ymax = self.imin+0.5, self.imax+0.5
-            xcmin, xcmax = xmin+0.5, xmax+0.5  # pixel center
-            ycmin, ycmax = ymin+0.5, ymax+0.5
-            xc = np.arange(xcmin, xcmax+1).reshape(1, -1)  # Cheaper than full grid
-            yc = np.arange(ycmin, ycmax+1).reshape(-1, 1)
+            # Pixel centers in pixel coordinates; vectors are cheaper than
+            # full grids
+            ny, nx = self.section.shape
+            xc = np.arange(nx).reshape(1, -1) + 1 + self.jmin
+            yc = np.arange(ny).reshape(-1, 1) + 1 + self.imin
 
             # Distances from the aperture center
             r = np.sqrt((xc - self.x)**2 + (yc - self.y)**2)
@@ -307,7 +306,7 @@ class CircularAperture(object):
 
         return weights
 
-    def centroid(self, adjust=False, rtol=0.01):
+    def centroid(self, adjust=False, mode='2dgauss', rtol=0.01):
         """Find the centroid of the source in the aperture.
 
         Parameters
@@ -315,11 +314,18 @@ class CircularAperture(object):
         adjust : bool, optional
             If True, set the aperture's center point to the centroid.
             Default is False.
+        mode : {'2dgauss', 'com'}, optional
+            The method for computing the centroid. If '2dgauss' (default),
+            a 2d Gaussian function is fit to the source using the
+            `fit_gaussian` method. If 'com', peaks in the marginal
+            distributions are used as an initial guess for the centroid,
+            then the location is refined by iteratively calculating the
+            "center of mass" until convergence within a given tolerance.
         rtol : float, optional
             Relative tolerance (fractional difference with respect to the
-            previous iteration) for the centroid solution. Iteration stops
-            when the centroid position changes by less than `rtol`. Default
-            is 0.01.
+            previous iteration) for the centroid solution in 'com' mode.
+            Iteration stops when the centroid position changes by less than
+            `rtol`. Default is 0.01.
 
         Returns
         -------
@@ -330,39 +336,74 @@ class CircularAperture(object):
         if self.section is None:
             xc, yc = None, None
         else:
-            #xc, yc = calc_centroid(self.section, weights=self.weights())
-            #xc, yc = xc + self.jmin, yc + self.imin  # `image` coords
-
             parameters_copy = self._parameters[:]
 
-            # Use maxima of marginal distributions as initial guess
-            weights = self.weights()
-            xmarg = np.sum(self.section * weights, axis=0)
-            ymarg = np.sum(self.section * weights, axis=1)
+            if mode == '2dgauss':
+                amp, xc, yc, sigmax, sigmay, theta = self.fit_gaussian()
+                self.x, self.y = xc, yc
 
-            # x and y coordinates of pixel centers
-            x = np.arange(xmarg.size) + 1 + self.jmin
-            y = np.arange(ymarg.size) + 1 + self.imin
+            elif mode == 'com':
 
-            # x and y coordinates of maxima
-            xc, yc = x[xmarg.argmax()], y[ymarg.argmax()]
-            self.x, self.y = xc, yc  # parameters.setter updates section
+                # Use maxima of marginal distributions as initial guess
+                weights = self.weights()
+                xmarg = np.sum(self.section * weights, axis=0)
+                ymarg = np.sum(self.section * weights, axis=1)
 
-            t = rtol + 1
-            rc_prev = self.section.shape[0] + 1  # off image
-            while t >= rtol:
-                xc, yc = self.x - self.jmin, self.y - self.imin  # `section` coords
-                xc, yc = center_of_mass(self.section, weights=self.weights())
-                xc, yc = xc + self.jmin, yc + self.imin  # `image` coords
+                # x and y coordinates of pixel centers
+                x = np.arange(xmarg.size) + 1 + self.jmin
+                y = np.arange(ymarg.size) + 1 + self.imin
+
+                # x and y coordinates of maxima
+                xc, yc = x[xmarg.argmax()], y[ymarg.argmax()]
                 self.x, self.y = xc, yc  # parameters.setter updates section
-                rc = np.sqrt(xc**2 + yc**2)
-                t = np.abs(rc - rc_prev) / rc_prev
-                rc_prev = rc
+
+                t = rtol + 1
+                rc_prev = self.section.shape[0] + 1  # off image
+                while t >= rtol:
+                    xc, yc = self.x - self.jmin, self.y - self.imin  # section coords
+                    xc, yc = center_of_mass(self.section, weights=self.weights())
+                    xc, yc = xc + self.jmin, yc + self.imin  # image coords
+                    self.x, self.y = xc, yc  # The setters update section
+                    rc = np.sqrt(xc**2 + yc**2)
+                    t = np.abs(rc - rc_prev) / rc_prev
+                    rc_prev = rc
 
             if not adjust:
                 self.parameters = parameters_copy
 
         return (xc, yc)
+
+    def fit_gaussian(self):
+        """Fit a 2d Gaussian function to the source.
+
+        Initial guesses for the amplitude, center, width, and rotation
+        parameters are the difference between the maximum and minimum
+        values in `section`, the current x and y of the aperture, the
+        current radius, and 0, respectively.
+
+        Returns
+        -------
+        tuple
+            Best-fit 2d Gaussian parameters: amplitude, x and y of the
+            center, x and y widths (sigma), and counter clockwise rotation
+            angle.
+
+        """
+        def func(xy, amp, x0, y0, sigmax, sigmay, theta):
+            f = gaussian2d(xy[0], xy[1], amp, x0, y0, sigmax, sigmay, theta)
+            return f.ravel()
+
+        # Pixel centers in pixel coordinates; vectors are cheaper than
+        # full grids
+        ny, nx = self.section.shape
+        xc = np.arange(nx).reshape(1, -1) + 1 + self.jmin
+        yc = np.arange(ny).reshape(-1, 1) + 1 + self.imin
+
+        # Find the best fit parameters
+        dz = self.section.ravel() - self.section.min()
+        p0 = (dz.max(), self.x, self.y, self.r/2, self.r/2, 0)
+        popt, pcov = scipy.optimize.curve_fit(func, (xc, yc), dz, p0=p0)
+        return tuple(popt)
 
 
 class EllipticalAperture(object):
@@ -512,3 +553,35 @@ def center_of_mass(img, weights=None):
     ycom = np.sum(img * y, dtype='float') / img_sum
 
     return (xcom, ycom)
+
+
+def gaussian2d(x, y, amp, x0, y0, sigmax, sigmay, theta):
+    """2d Gaussian function.
+
+    Parameters
+    ----------
+    x, y : array
+        Input x and y coordinates. Both arrays must be the same shape, or
+        be broadcastable.
+    amp : float
+        Amplitude.
+    x0, y0 : float
+        Location of the center.
+    sigmax, sigmay : float
+        Widths (sigma).
+    theta : float
+        Counter clockwise rotation angle, degrees.
+
+    Returns
+    -------
+    array
+        2d Gaussian function values, same shape as `x` and `y` or the
+        result of their broadcasting.
+
+    """
+    theta = theta * np.pi/180
+    a = np.cos(theta)**2 / (2*sigmax**2) + np.sin(theta)**2 / (2*sigmay**2)
+    b = np.sin(2*theta) / (4*sigmax**2) - np.sin(2*theta) / (4*sigmay**2)
+    c = np.sin(theta)**2 / (2*sigmax**2) + np.cos(theta)**2 / (2*sigmay**2)
+    f = amp * np.exp(-(a*(x - x0)**2 + 2*b*(x - x0)*(y - y0) + c*(y - y0)**2))
+    return f
