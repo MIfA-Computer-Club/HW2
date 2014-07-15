@@ -16,7 +16,6 @@ def centroid(center_xy, radius,dat):
 	tempMax2 = 0
 	maxX = 0
 	maxY = 0
-	print "center is ", center_xy
 	maxArray = []
 	maxCoords = []
 	for x in range(int(round(center_x - radius)), int(round(center_x + radius))):
@@ -48,7 +47,6 @@ def centroid(center_xy, radius,dat):
 	for x in range(int(round(radius))):
 		if (dat[newCenter[1],newCenter[0]+x] - background) > (maximum-background)/math.e**3:
 			newRadius = x+1
-	print "max is ", maximum
 	return newCenter, newRadius
 
 def main():

@@ -6,8 +6,6 @@ import pyregion
 import matplotlib.cm as cm
 import math
 
-#http://www.mpia-hd.mpg.de/homes/ianc/python/phot.html
-
 info = 0
 
 def centroid(center_xy, radius,dat):
