@@ -1,0 +1,11 @@
+# Region file format: DS9 version 4.1
+# Filename: /Users/coyote_arnie/MifA_CC/HW2/POSIIF_Coma.fits
+global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
+image
+circle(2615.6,1915.4,24) # GMP4350
+circle(1809.6667,1703.6667,13.607491) # NGC4869
+circle(1618,1685,20) # NGC4875
+circle(2503.6,2081.8,24) # GMP4277
+circle(2055,2465,20) # NGC4860
+circle(1345.3632,2894.784,34.763164) # NGC4881
+circle(201.46098,1589.5074,109.25032) # NGC4921
