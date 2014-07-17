@@ -6,10 +6,12 @@ from astropy.io import fits
 import matplotlib.pyplot as plt
 from scipy.ndimage.interpolation import shift
 import utils
+from astropy.table import Table, Column
 
 class Galaxy(object):
     
-    def __init__(self, initial_coords, data, rad = 20):
+    def __init__(self, name, initial_coords, data, rad = 20):
+        self.name = name
         self.initial_x, self.initial_y = initial_coords
         self.rad = rad
 
@@ -57,19 +59,68 @@ def main():
 
     # Parse coordinates
     regions = pyregion.open(args.region)
+    names = [r.comment for r in regions]
     coords = [(int(r.coord_list[0]),int(r.coord_list[1])) for r in regions]
 
     # Grab those juicy data meats
     data,header = fits.getdata(args.data,header=True)
 
     # For each coord, initialize and centroid galaxy
-    galaxies = [Galaxy(co,data) for co in coords]
+    galaxies = [Galaxy(name,co,data) for co,name in zip(coords,names)]
 
-    #Show each swatch
+    # Show each swatch
+    #for gal in galaxies:
+    #    gal.show()
+    #plt.show()
+
+    # Perform aperture photometry
+    rows = []
     for gal in galaxies:
-        gal.show()
-    plt.show()
-    exit()
+        ap = utils.CircularAperture((gal.xc,gal.yc), gal.swatch, 15,19)
+        rows.append(ap.run())
+
+    t = Table(rows=rows)
+    t.add_column(Column([gal.name for gal in galaxies],name='name'),index=0)
+
+    # Convert to counts/arcsec^2
+    pltscale = header['pltscale']    # "/mm
+    pltscale = pltscale /1000        # "/um
+    pixscaleX = header['xpixelsz']   # um/pix
+    pixscaleX = pixscaleX * pltscale # "/pix
+    pixscaleY = header['ypixelsz']   # um/pix
+    pixscaleY = pixscaleY * pltscale # "/pix
+    pixscale = pixscaleX * pixscaleY # arcsec^2/pix^2
+    cpa2 = t['counts/pix^2'] / pixscale
+    epa2 = t['err_cp2'] * pixscale
+    
+    cpa2 = Column(cpa2,name='counts/arcsec^2')
+    epa2 = Column(epa2,name='err_ca2')
+    t.add_columns([cpa2,epa2])
+
+    t.pprint()
+
+'''
+  name       #pix      counts/pix^2    err_cp2    counts/arcsec^2    err_ca2   
+------- ------------- ------------- ------------- --------------- -------------
+NGC4875 706.858347058 7721.59941623 117.896411641   7584.60432695 120.025887186
+NGC4869 706.858347058 11151.8722709 173.611128029   10954.0179592 176.746937224
+GMP4277 706.858347058 9756.15839964 139.752361268   9583.06656737 142.276604641
+GMP4350 706.858347058 8855.62011973 130.378485589   8698.50545946  132.73341559
+NGC4860 706.858347058 11748.7754577 157.304664726   11540.3310078 160.145942354
+NGC4881 706.858347058 11499.1497714 161.710512127   11295.1341311 164.631369312
+NGC4921 706.858347058  12822.257865 215.253917975   12594.7679026 219.141890035
+'''
+
+
+
+
+
+
+
+
+
+    
+    
 '''
     # Make a sector profile to determine if another source is present
     binsize = 15

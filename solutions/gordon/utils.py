@@ -5,6 +5,7 @@ Utility functions for centroiding/profiling
 import numpy as np
 from astropy.modeling import models, fitting
 import pyfits
+import matplotlib.pyplot as plt
 
 fitter = fitting.LevMarLSQFitter()
 
@@ -153,3 +154,75 @@ def sectorprofile(data, center=None, rad=15, binsize=30, interpnan = True):
 
     
     return (bin_centers, sector_prof)
+
+
+class CircularAperture(object):
+
+    def __init__(self, xycenter, data, radius, skyradius):
+        self.xc, self.yc = xycenter
+        self.data = data
+        self.radius = radius
+        self.skyradius = skyradius
+
+        self.aper = self.make_aperture(self.radius)
+        self.skyaper = self.make_aperture(self.radius,self.skyradius)
+
+
+    def make_aperture(self,radius,radius2=None):
+        x,y = np.ogrid[:self.data.shape[0],:self.data.shape[1]]
+        cx,cy = (self.xc,self.yc)
+
+        # circular mask
+        r = np.hypot(x-cx,y-cy)
+
+        if not radius2:
+            circmask = r <= radius - 0.5
+
+        # pixels entirely within aperture have weighting of 1
+        #weights = np.ones(self.data.shape) * circmask.astype('float')
+
+        else:
+            circmask = (r <= radius2 - 0.5) & (r >= radius + 0.5)
+            
+        return circmask.astype('float')
+    
+    @staticmethod
+    def num_pix(weights):
+        return np.sum(weights)    
+
+    def run(self,longTable=False):
+        '''Return:
+        (skysub_aper_counts, aper_area, total_aper_counts,
+         sky_area, total_sky_counts, med_sky_counts, std_sky_counts)
+        '''
+        aper = self.aper * self.data
+        sky = self.skyaper * self.data
+        aper_area = self.radius*self.radius*np.pi
+        sky_area = self.skyradius**2*np.pi - aper_area
+
+        total_aper_counts = np.sum(aper)
+        total_sky_counts = np.sum(sky)
+        med_sky_counts = np.median(sky)
+        skysub_aper_counts = total_aper_counts - med_sky_counts*aper_area
+        std_sky_counts = np.std(sky)/np.sqrt(self.num_pix(self.skyaper))
+
+        counts_per_pix2 = skysub_aper_counts / aper_area
+        
+        if longTable:
+            return {'counts/pix^2':counts_per_pix2,
+                    'skysub_aper_counts':skysub_aper_counts,
+                    'aper_area':aper_area,
+                    'total_aper_counts':total_aper_counts,
+                    'sky_area':sky_area,
+                    'total_sky_counts':total_sky_counts,
+                    'med_sky_counts':med_sky_counts,
+                    'std_sky_counts':std_sky_counts}
+
+        else:
+            return {'counts/pix^2':counts_per_pix2,
+                    'err_cp2':std_sky_counts,
+                    '#pix':aper_area}
+        
+
+        
+        
