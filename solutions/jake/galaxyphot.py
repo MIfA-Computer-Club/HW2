@@ -23,6 +23,7 @@ Functions
 ================== ===========================================
 `from_region_file` Create apertures from a DS9 region file.
 `center_of_mass`   Calculate the "center of mass" in an image.
+`gaussian2d`       2d Gaussian function.
 ================== ===========================================
 
 """
@@ -50,17 +51,13 @@ class CircularAperture(object):
     Attributes
     ----------
     parameters
+    i
+    j
+    ij
     x
     y
     xy
     r
-    xmin
-    xmax
-    ymin
-    ymax
-    xrange
-    yrange
-    xyrange
     imin
     imax
     jmin
@@ -68,9 +65,16 @@ class CircularAperture(object):
     irange
     jrange
     ijrange
+    ijslice
+    xmin
+    xmax
+    ymin
+    ymax
+    xrange
+    yrange
+    xyrange
     image
     section
-    weights
     label : string
         Region label.
     nsub : int
@@ -83,21 +87,24 @@ class CircularAperture(object):
 
     Methods
     -------
+    weights
+    fit_gaussian
     centroid
 
     """
 
     def __init__(self, xy, r, image=None, label=None, nsub=50):
-        self.parameters = [xy[0], xy[1], r]
+        i, j = xy[1] - 0.5, xy[0] - 0.5  # Convert into array coordinates
+        self.parameters = [i, j, r]
         self.image = image
         self.label = label
         self.nsub = nsub
 
     @property
     def parameters(self):
-        """x, y, and r values of the aperture.
+        """i, j, and r values of the aperture.
 
-        See the `x`, `y`, and `r` properties.
+        See the `i`, `j`, and `r` properties.
 
         """
         return self._parameters
@@ -114,37 +121,65 @@ class CircularAperture(object):
             pass
         else:
             if self.image is not None:
-                self._section = self.image[self.ijrange]
+                self._section = self.image[self.ijslice]
+
+    @property
+    def i(self):
+        """i coordinate of the center."""
+        return self._parameters[0]
+
+    @i.setter
+    def i(self, i):
+        self._parameters[0] = i
+        self.parameters = self._parameters
+
+    @property
+    def j(self):
+        """j coordinate of the center."""
+        return self._parameters[1]
+
+    @j.setter
+    def j(self, j):
+        self._parameters[1] = j
+        self.parameters = self._parameters
+
+    @property
+    def ij(self):
+        """i and j coordinates of the center."""
+        return self._parameters[:2]
+
+    @ij.setter
+    def ij(self, ij):
+        self.i, self.j = ij
 
     @property
     def x(self):
         """x coordinate of the center."""
-        return self._parameters[0]
+        return self.j + 0.5
 
     @x.setter
     def x(self, x):
-        self._parameters[0] = x
+        self._parameters[1] = x - 0.5
         self.parameters = self._parameters
 
     @property
     def y(self):
         """y coordinate of the center."""
-        return self._parameters[1]
+        return self.i + 0.5
 
     @y.setter
     def y(self, y):
-        self._parameters[1] = y
+        self._parameters[0] = y - 0.5
         self.parameters = self._parameters
 
     @property
     def xy(self):
         """x and y coordinates of the center."""
-        return self._parameters[:2]
+        return (self.x, self.y)
 
     @xy.setter
     def xy(self, xy):
-        self._parameters[:2] = xy
-        self.parameters = self._parameters
+        self.x, self.y = xy
 
     @property
     def r(self):
@@ -155,6 +190,49 @@ class CircularAperture(object):
     def r(self, r):
         self._parameters[2] = r
         self.parameters = self._parameters
+
+    @property
+    def imin(self):
+        """Minimum i value of the aperture; read only."""
+        return self.i - self.r
+
+    @property
+    def imax(self):
+        """Maximum i value of the aperture; read only."""
+        return self.i + self.r
+
+    @property
+    def jmin(self):
+        """Minimum j value of the aperture; read only."""
+        return self.j - self.r
+
+    @property
+    def jmax(self):
+        """Maximum j value of the aperture; read only."""
+        return self.j + self.r
+
+    @property
+    def irange(self):
+        """Minimum and maximum i values of the aperture; read only."""
+        return (self.imin, self.imax)
+
+    @property
+    def jrange(self):
+        """Minimum and maximum i values of the aperture; read only."""
+        return (self.jmin, self.jmax)
+
+    @property
+    def ijrange(self):
+        """Minimum and maximum i and j values of the aperture; read only."""
+        return (self.imin, self.imax, self.jmin, self.jmax)
+
+    @property
+    def ijslice(self):
+        """Slice of from `imin` to `imax` and `jmin` to `jmax`, inclusive;
+        read only.
+
+        """
+        return (slice(self.imin, self.imax+1), slice(self.jmin, self.jmax+1))
 
     @property
     def xmin(self):
@@ -192,47 +270,6 @@ class CircularAperture(object):
         return (self.xmin, self.xmax, self.ymin, self.ymax)
 
     @property
-    def imin(self):
-        """Row index of `ymin`; read only."""
-        return int(self.ymin - 0.5)
-
-    @property
-    def imax(self):
-        """Row index of `ymax`; read only."""
-        return int(self.ymax - 0.5)
-
-    @property
-    def jmin(self):
-        """Column index of `xmin`; read only."""
-        return int(self.xmin - 0.5)
-
-    @property
-    def jmax(self):
-        """Column index of `xmax`; read only."""
-        return int(self.xmax - 0.5)
-
-    @property
-    def irange(self):
-        """Slice of all rows from `imin` to `imax`, inclusive; read only."""
-        return slice(self.imin, self.imax+1)
-
-    @property
-    def jrange(self):
-        """Slice of all columns from `jmin` to `jmax`, inclusive; read
-        only.
-
-        """
-        return slice(self.jmin, self.jmax+1)
-
-    @property
-    def ijrange(self):
-        """Slice of all rows from `imin` to `imax` and all columns from
-        `jmin` to `jmax`, inclusive; read only.
-
-        """
-        return (self.irange, self.jrange)
-
-    @property
     def image(self):
         """Image data as a 2d array."""
         return self._image
@@ -242,7 +279,7 @@ class CircularAperture(object):
         self._image = arr
 
         # Reset the view into the image array
-        self._section = None if arr is None else arr[self.ijrange]
+        self._section = None if arr is None else arr[self.ijslice]
 
     @property
     def section(self):
@@ -270,41 +307,70 @@ class CircularAperture(object):
         if self.section is None:
             weights = None
         else:
-            # Pixel centers in pixel coordinates; vectors are cheaper than
-            # full grids
-            ny, nx = self.section.shape
-            xc = np.arange(nx).reshape(1, -1) + 1 + self.jmin
-            yc = np.arange(ny).reshape(-1, 1) + 1 + self.imin
+            # Pixel centers in array coordinates
+            ni, nj = self.section.shape
+            i = np.arange(ni).reshape(-1, 1) + 0.5 + self.imin
+            j = np.arange(nj).reshape(1, -1) + 0.5 + self.jmin
 
             # Distances from the aperture center
-            r = np.sqrt((xc - self.x)**2 + (yc - self.y)**2)
+            r = np.sqrt((i - self.i)**2 + (j - self.j)**2)
 
             # Pixels with centers within r of aperture center
             weights = (r <= self.r).astype('float')
 
             # Partial pixels
             if self.nsub > 1:
-                # Border pixels
+                # Indices (lower-left corners) of border pixels
                 i, j = np.where(np.abs(r - self.r) <= np.sqrt(0.5))
 
                 # Generic subpixel grid
-                gridx = (np.arange(self.nsub).reshape(1, -1) + 0.5) / self.nsub
-                gridy = (np.arange(self.nsub).reshape(-1, 1) + 0.5) / self.nsub
+                gridi = (np.arange(self.nsub).reshape(-1, 1) + 0.5) / self.nsub
+                gridj = (np.arange(self.nsub).reshape(1, -1) + 0.5) / self.nsub
 
                 # Centers of subpixels
-                i, j = i[:,None,None], j[:,None,None]  # Expand for broadcasting
-                xsub = gridx + self.jmin + j + 0.5  # (len(i), 1, nsub)
-                ysub = gridy + self.imin + i + 0.5  # (len(i), nsub, 1)
+                isub = gridi + i[:,None,None] + self.imin  # (len(i), nsub, 1)
+                jsub = gridj + j[:,None,None] + self.jmin  # (len(i), 1, nsub)
 
                 # Distances from aperture center; (len(i), nsub, nsub)
-                rsub = np.sqrt((xsub - self.x)**2 + (ysub - self.y)**2)
+                rsub = np.sqrt((isub - self.i)**2 + (jsub - self.j)**2)
 
                 # Refined pixel weights
-                i, j = i[:,0,0], j[:,0,0]  # Original shape
                 kwargs = dict(axis=(1, 2), dtype='float')
                 weights[i,j] = np.sum(rsub <= self.r, **kwargs) / self.nsub**2
 
         return weights
+
+    def fit_gaussian(self):
+        """Fit a 2d Gaussian function to the source.
+
+        Initial guesses for the amplitude, center, width, and rotation
+        parameters are the difference between the maximum and minimum
+        values in `section`, the current x and y of the aperture, the
+        current radius, and 0, respectively.
+
+        Returns
+        -------
+        tuple
+            Best-fit 2d Gaussian parameters: amplitude, x and y pixel
+            coordinates of the center, x and y widths (sigma), and counter
+            clockwise rotation angle.
+
+        """
+        def func(xy, amp, x0, y0, sigmax, sigmay, theta):
+            f = gaussian2d(xy[0], xy[1], amp, x0, y0, sigmax, sigmay, theta)
+            return f.ravel()
+
+        # Pixel centers in array coordinates
+        ni, nj = self.section.shape
+        i = np.arange(ni).reshape(-1, 1) + 0.5 + self.imin
+        j = np.arange(nj).reshape(1, -1) + 0.5 + self.jmin
+
+        # Find the best fit parameters
+        dz = self.section.ravel() - self.section.min()
+        p0 = (dz.max(), self.j, self.i, self.r/2.0, self.r/2.0, 0.0)
+        popt, pcov = scipy.optimize.curve_fit(func, (j, i), dz, p0=p0)
+        popt[1], popt[2] = popt[1] + 0.5, popt[2] + 0.5  # Pixel coords
+        return tuple(popt)
 
     def centroid(self, adjust=False, mode='2dgauss', rtol=0.01):
         """Find the centroid of the source in the aperture.
@@ -343,24 +409,24 @@ class CircularAperture(object):
                 self.x, self.y = xc, yc
 
             elif mode == 'com':
-
-                # Use maxima of marginal distributions as initial guess
+                # Use peaks of the marginal distributions as an initial guess
                 weights = self.weights()
-                xmarg = np.sum(self.section * weights, axis=0)
-                ymarg = np.sum(self.section * weights, axis=1)
+                sumi = np.sum(self.section * weights, axis=1)
+                sumj = np.sum(self.section * weights, axis=0)
 
-                # x and y coordinates of pixel centers
-                x = np.arange(xmarg.size) + 1 + self.jmin
-                y = np.arange(ymarg.size) + 1 + self.imin
+                # Pixel centers in array coordinates
+                i = np.arange(sumi.size) + 0.5 + self.imin
+                j = np.arange(sumj.size) + 0.5 + self.jmin
 
-                # x and y coordinates of maxima
-                xc, yc = x[xmarg.argmax()], y[ymarg.argmax()]
+                # Coordinates of maxima
+                ic, jc = i[sumi.argmax()], j[sumj.argmax()]
+                xc, yc = jc + 0.5, ic + 0.5
                 self.x, self.y = xc, yc  # parameters.setter updates section
 
+                # Optimize
                 t = rtol + 1
                 rc_prev = self.section.shape[0] + 1  # off image
                 while t >= rtol:
-                    xc, yc = self.x - self.jmin, self.y - self.imin  # section coords
                     xc, yc = center_of_mass(self.section, weights=self.weights())
                     xc, yc = xc + self.jmin, yc + self.imin  # image coords
                     self.x, self.y = xc, yc  # The setters update section
@@ -372,38 +438,6 @@ class CircularAperture(object):
                 self.parameters = parameters_copy
 
         return (xc, yc)
-
-    def fit_gaussian(self):
-        """Fit a 2d Gaussian function to the source.
-
-        Initial guesses for the amplitude, center, width, and rotation
-        parameters are the difference between the maximum and minimum
-        values in `section`, the current x and y of the aperture, the
-        current radius, and 0, respectively.
-
-        Returns
-        -------
-        tuple
-            Best-fit 2d Gaussian parameters: amplitude, x and y of the
-            center, x and y widths (sigma), and counter clockwise rotation
-            angle.
-
-        """
-        def func(xy, amp, x0, y0, sigmax, sigmay, theta):
-            f = gaussian2d(xy[0], xy[1], amp, x0, y0, sigmax, sigmay, theta)
-            return f.ravel()
-
-        # Pixel centers in pixel coordinates; vectors are cheaper than
-        # full grids
-        ny, nx = self.section.shape
-        xc = np.arange(nx).reshape(1, -1) + 1 + self.jmin
-        yc = np.arange(ny).reshape(-1, 1) + 1 + self.imin
-
-        # Find the best fit parameters
-        dz = self.section.ravel() - self.section.min()
-        p0 = (dz.max(), self.x, self.y, self.r/2, self.r/2, 0)
-        popt, pcov = scipy.optimize.curve_fit(func, (xc, yc), dz, p0=p0)
-        return tuple(popt)
 
 
 class EllipticalAperture(object):
@@ -543,14 +577,15 @@ def center_of_mass(img, weights=None):
     if weights is None:
         weights = 1
 
-    # x and y coordinates of pixel centers
-    x = np.arange(img.shape[1]).reshape(1, -1) + 1
-    y = np.arange(img.shape[0]).reshape(-1, 1) + 1
+    # i and j coordinates of pixel centers
+    i = np.arange(img.shape[0]).reshape(-1, 1) + 0.5
+    j = np.arange(img.shape[1]).reshape(1, -1) + 0.5
 
-    # Center of mass coordinates
+    # Center of mass
     img_sum = np.sum(img)
-    xcom = np.sum(img * x, dtype='float') / img_sum
-    ycom = np.sum(img * y, dtype='float') / img_sum
+    icom = np.sum(img * i, dtype='float') / img_sum
+    jcom = np.sum(img * j, dtype='float') / img_sum
+    xcom, ycom = jcom + 0.5, icom + 0.5
 
     return (xcom, ycom)
 
