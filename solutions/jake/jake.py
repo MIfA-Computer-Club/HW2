@@ -22,19 +22,19 @@ def problem_1():
     for aperture in aperture_list:
         aperture.image = data
         xy1 = aperture.xy
-        xy2 = aperture.centroid(adjust=True)
+        xy2 = aperture.centroid(adjust=True, mode='2dgauss')
         line = '{0:s}    old: {1:8.3f} {2:8.3f}    new: {3:8.3f} {4:8.3f}'
         print line.format(aperture.label, xy1[0], xy1[1], xy2[0], xy2[1])
     print
 
     """
     NGC4875    old: 1619.000 1686.000    new: 1619.288 1687.129
-    NGC4869    old: 1809.667 1705.167    new: 1810.764 1705.461
-    GMP4277    old: 2500.600 2083.800    new: 2503.357 2083.336
-    GMP4350    old: 2608.600 1919.400    new: 2615.730 1917.089
-    NGC4860    old: 2056.000 2464.000    new: 2055.825 2466.551
+    NGC4869    old: 1809.667 1705.167    new: 1810.737 1705.404
+    GMP4277    old: 2500.600 2083.800    new: 2503.363 2083.335
+    GMP4350    old: 2608.600 1919.400    new: 2615.732 1917.089
+    NGC4860    old: 2056.000 2464.000    new: 2055.827 2466.567
     NGC4881    old: 1345.363 2897.784    new: 1344.625 2897.277
-    NGC4921    old:  203.461 1594.507    new:  198.450 1596.031
+    NGC4921    old:  203.461 1594.507    new:  198.296 1596.100
 
     """
 
@@ -46,13 +46,11 @@ def problem_1():
 
     gs = matplotlib.gridspec.GridSpec(
         nrow, ncol, left=0.02, bottom=0.02, right=0.98, top=0.98,
-        wspace=0.02, hspace=0.02)
+        wspace=0.06, hspace=0.06)
     ax_list = []
     for aperture, spec in zip(aperture_list, gs):
         ax = plt.subplot(spec)
 
-        extent = (aperture.jmin+0.5, aperture.jmax+1.5,
-                  aperture.imin+0.5, aperture.imax+1.5)
         data = aperture.section.copy()
 
         # Find vmin and vmax to scale the image from pmin to pmax
@@ -71,17 +69,20 @@ def problem_1():
         # Plot image and aperture
         ax.imshow(
             data, origin='lower', interpolation='nearest',
-            extent=extent, cmap=cmap, vmin=vmin, vmax=vmax)
-        ax.plot(aperture.x, aperture.y, 'cx', mew=2)
+            extent=aperture.xyextent, cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.plot(aperture.x, aperture.y, 'cx', mew=1)
         circle = matplotlib.patches.Circle(
-            (aperture.x, aperture.y), radius=aperture.r, ec='k', fc='none')
+            (aperture.x, aperture.y), radius=aperture.r, ec='k', fc='none',
+            alpha=0.3, zorder=10)
         ax.add_patch(circle)
 
         # Text
-        ax.text(0.03, 0.93, aperture.label, size=10, transform=ax.transAxes)
-        ax.text(0.03, 0.87, 'x = {:.3f}'.format(aperture.x), size=8, transform=ax.transAxes)
-        ax.text(0.03, 0.81, 'y = {:.3f}'.format(aperture.y), size=8, transform=ax.transAxes)
+        txtkw = dict(transform=ax.transAxes, zorder=50)
+        ax.text(0.03, 0.92, aperture.label, size=10, **txtkw)
+        ax.text(0.03, 0.85, 'x = {:.3f}'.format(aperture.x), size=8, **txtkw)
+        ax.text(0.03, 0.78, 'y = {:.3f}'.format(aperture.y), size=8, **txtkw)
 
+        ax.axis(aperture.xyextent)
         ax.xaxis.set_visible(False)
         ax.yaxis.set_visible(False)
 
