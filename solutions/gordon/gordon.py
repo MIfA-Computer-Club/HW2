@@ -99,8 +99,8 @@ def main():
 
     t.pprint()
 
-'''
-  name       #pix      counts/pix^2    err_cp2    counts/arcsec^2    err_ca2   
+    '''
+name       #pix      counts/pix^2    err_cp2    counts/arcsec^2    err_ca2   
 ------- ------------- ------------- ------------- --------------- -------------
 NGC4875 706.858347058 7721.59941623 117.896411641   7584.60432695 120.025887186
 NGC4869 706.858347058 11151.8722709 173.611128029   10954.0179592 176.746937224
@@ -109,7 +109,31 @@ GMP4350 706.858347058 8855.62011973 130.378485589   8698.50545946  132.73341559
 NGC4860 706.858347058 11748.7754577 157.304664726   11540.3310078 160.145942354
 NGC4881 706.858347058 11499.1497714 161.710512127   11295.1341311 164.631369312
 NGC4921 706.858347058  12822.257865 215.253917975   12594.7679026 219.141890035
-'''
+    '''
+
+    for gal in galaxies:
+        plt.figure()
+        c = plt.contour(gal.swatch)
+        levels = c.levels
+        #print levels
+        levels = np.linspace(np.min(levels),np.max(levels),num=50)
+        print levels
+
+        plt.clf()
+        plt.contour(gal.swatch,levels=levels)
+        
+        plt.show()
+        exit()
+        
+        bins, prof = utils.radialprofile(gal.swatch,binsize=0.5)
+        #radbins = np.sqrt(pixscale)*bins
+        #rof_arcsec = prof / pixscale
+        plt.figure()
+        plt.plot(bins,prof,'bo')
+        plt.title(gal.name)
+        plt.show()
+        exit()
+    plt.show()
 
 
 

@@ -73,12 +73,14 @@ def radialprofile(data, center=None, binsize=1, interpnan = True):
     if isinstance(data, str):
         data = pyfits.getdata(data)
 
+    plt.imshow(data)
+        
     # get indices of data
     y, x = np.indices(data.shape)
 
     # if center not specified, assume image is centroided
     if not center:
-        center = np.array([(x.max()-x.min())/2.0, (y.max()-y.min())/2.0])
+        center = np.array([(x.max()-x.min())/2.0, (y.max()-ymin())/2.0])
 
     # construct matrix of distances from center pixels    
     r = np.hypot(x - center[0], y - center[1])
@@ -91,7 +93,7 @@ def radialprofile(data, center=None, binsize=1, interpnan = True):
     bin_centers = (bins[1:] + bins[:-1])/2.0
 
     # use histogram to count the number of pixels a distance r from the center,
-    #  weighing by flux counts.
+    #  weighting by flux counts.
     radial_prof = np.histogram(r,bins, weights = data)[0] / np.histogram(r,bins, weights=np.ones(data.shape))[0]
 
     if interpnan:
