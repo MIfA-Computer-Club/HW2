@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage.interpolation import shift
 import utils
 from astropy.table import Table, Column
+from matplotlib.backends.backend_pdf import PdfPages
 
 class Galaxy(object):
     
@@ -37,15 +38,12 @@ class Galaxy(object):
                         size-self.rad:size+self.rad]
 
         return nslice
-
-
-    def aperture(self):
-        pass
     
     def show(self):
-        plt.figure()
-        ax = plt.imshow(self.swatch,origin='lower',cmap='gray_r')
-        return ax
+        fig = plt.figure()
+        ax = plt.imshow(self.swatch,origin='lower',cmap=plt.cm.gist_heat_r)
+        plt.title(self.name)
+        return (fig,ax)
         
 
 def main():
@@ -69,9 +67,11 @@ def main():
     galaxies = [Galaxy(name,co,data) for co,name in zip(coords,names)]
 
     # Show each swatch
-    #for gal in galaxies:
-    #    gal.show()
+    pp = PdfPages('galaxy_im.pdf')
+    for gal in galaxies:
+        pp.savefig(gal.show()[0])
     #plt.show()
+    pp.close()
 
     # Perform aperture photometry
     rows = []
@@ -111,18 +111,89 @@ NGC4881 706.858347058 11499.1497714 161.710512127   11295.1341311 164.631369312
 NGC4921 706.858347058  12822.257865 215.253917975   12594.7679026 219.141890035
     '''
 
+    # prep PDF
+    pp = PdfPages('galaxy_prof.pdf')
+    pp2= PdfPages('galaxy_contour.pdf')
+
+    contours = []
     for gal in galaxies:
+        # perform contour isophotal fitting for profile
+        r,med,err,levels = utils.contour_profile(gal.swatch,get_levels=True)
+        contours.append(levels)
+
+        fig = plt.figure()
+
+        # plot profile with errorbars
+        plt.errorbar(np.array(r)*pixscaleX,med,yerr=err,fmt='o',ms=8)
+
+        # fit sersic function
+        try:
+            # hard-coded bullshit!!
+            if gal.name == 'NGC4860':
+                xi,yi = r[:-2],med[:-2]
+            elif gal.name == 'GMP4350':
+                xi,yi = r[1:],med[1:]
+            elif gal.name == 'NGC4869':
+                xi,yi = r[:-4],med[:-4]
+            else:
+                xi,yi = r,med 
+            xf,yf,p = utils.sersic_fit(xi,yi,rebin=100)
+        except:
+            plt.legend([gal.name])
+            continue
+
+        # plot fit
+        plt.plot(xf*pixscaleX,yf,'r-')
+        plt.ylabel('Counts')
+        plt.xlabel('Radius [arcsec]')
+        #plt.xlim([0,12])
+        #plt.legend([gal.name,'n = %.2f' % p[0]])
+
+        # plot Re as just half max
+        Ie = yf.max()/2
+        ReIdx,Ie = utils.find_nearest_element(yf,Ie,index=True)
+        Re = xf[ReIdx]*pixscaleX
+        # calculate Re from exp prof?
+        #Re = utils.exp_Re(xf*pixscaleX,yf)
+        plt.legend([gal.name,'n = %.2f\nRe = %.2f' % (p[0],Re)])
+        plt.plot([np.min(xf)*pixscaleX,Re],[Ie,Ie],'r-.')
+
+        pp.savefig(fig)
+
+
+    # plot image and contours
+    for gal in galaxies:
+        fig = plt.figure()
+        plt.imshow(gal.swatch,origin='lower',cmap=plt.cm.gist_heat_r)
+        plt.contour(gal.swatch,levels=levels,alpha=0.7)
+        plt.title(gal.name)
+
+
+        pp2.savefig(fig)        
+        
+        
+
+    #plt.show()
+    pp.close()
+    pp2.close()
+
+    exit()
+        
+
+    '''    
         plt.figure()
         c = plt.contour(gal.swatch)
         levels = c.levels
+        levels = np.linspace(np.min(levels),np.max(levels),num=20)
         #print levels
-        levels = np.linspace(np.min(levels),np.max(levels),num=50)
-        print levels
 
         plt.clf()
-        plt.contour(gal.swatch,levels=levels)
+        c = plt.contour(gal.swatch,levels=levels)
+        p = c.collections[0].get_paths()
+        print Path(p[0].vertices,closed=True)
         
-        plt.show()
+        
+        #plt.show()
         exit()
         
         bins, prof = utils.radialprofile(gal.swatch,binsize=0.5)
@@ -134,7 +205,7 @@ NGC4921 706.858347058  12822.257865 215.253917975   12594.7679026 219.141890035
         plt.show()
         exit()
     plt.show()
-
+    '''
 
 
 
