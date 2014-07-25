@@ -33,8 +33,10 @@ Functions
 
 ================== ===================================================
 |apphot|           Perform aperture photometry on an image.
+|extract|          Extract image data for the given aperture.
 |find_centroid|    Find the centroid of a source in an image.
 |fit_gaussian|     Fit a 2d Gaussian function to a source in an image.
+|from_region_file| Create apertures from a DS9 region file.
 ================== ===================================================
 
 
@@ -55,15 +57,17 @@ Module Index
 .. |EllipticalAnnulus| replace:: `~galaxyphot.apertures.EllipticalAnnulus`
 .. |EllipticalAperture| replace:: `~galaxyphot.apertures.EllipticalAperture`
 .. |PolygonAperture| replace:: `~galaxyphot.apertures.PolygonAperture`
+.. |extract| replace:: `~galaxyphot.apertures.extract`
+.. |from_region_file| replace:: `~galaxyphot.apertures.from_region_file`
 
 .. |apphot| replace:: `~galaxyphot.photometry.apphot`
 .. |find_centroid| replace:: `~galaxyphot.photometry.find_centroid`
 .. |fit_gaussian| replace:: `~galaxyphot.photometry.fit_gaussian`
 
 """
-from apertures import (
+from .apertures import (
     ApertureBase, CircularAnnulus, CircularAperture, EllipticalAnnulus,
-    EllipticalAperture, PolygonAperture
+    EllipticalAperture, PolygonAperture, extract, from_region_file
     )
 from .photometry import apphot, find_centroid, fit_gaussian
 from . import util

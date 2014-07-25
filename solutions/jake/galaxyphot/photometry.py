@@ -20,9 +20,9 @@ Functions
 try:
     import astropy.table
 except ImportError:
-    astropy_installed = False
+    ASTROPY_INSTALLED = False
 else:
-    astropy_installed = True
+    ASTROPY_INSTALLED = True
 import numpy as np
 import scipy.optimize
 
@@ -343,7 +343,7 @@ def apphot(image, aperture_list, median_type='weighted', unbiased=False):
 
     names = ('label', 'area', 'total', 'median', 'mean', 'std')
     dtypes = (str, float, float, float, float, float)
-    if astropy_installed:
+    if ASTROPY_INSTALLED:
         table = astropy.table.Table(data=zip(*rows), names=names, dtype=dtypes)
     else:
         table = np.array(rows, dtype=zip(names, dtypes))
