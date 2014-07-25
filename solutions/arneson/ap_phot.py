@@ -64,12 +64,14 @@ def main():
 	hdulist = fits.open(img_file)
 	img = hdulist[0].data
 	plate_scale = hdulist[0].header['pltscale'] #arcsec/mm
+	x_pix_scale = hdulist[0].header['xpixelsz'] #um/pix
+	y_pix_scale = hdulist[0].header['ypixelsz'] #um/pix
 	x_pix = hdulist[0].header['naxis1']
 	y_pix = hdulist[0].header['naxis2']
 	plate_size = hdulist[0].header['pltsizex']#mm same for x and y
 	hdulist.close()
-	x_pixel_scale = plate_scale*(plate_size/x_pix) #arcsec/pixel
-	y_pixel_scale = plate_scale*(plate_size/y_pix)
+	x_pixel_scale = x_pix_scale*(plate_size/1000) #arcsec/pixel
+	y_pixel_scale = y_pix_scale*(plate_size/1000) #arcsec/pixel
 	#load the region file
 	reg_file = "POSIIF_Coma_new.reg"
 	r = pyregion.open(reg_file)
