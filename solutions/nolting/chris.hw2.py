@@ -6,7 +6,7 @@ import pyregion
 import matplotlib.cm as cm
 import math
 
-info = 1
+info = 0
 
 def centroid_bright(center_xy, radius,dat):
 	center_x, center_y = center_xy
@@ -126,7 +126,8 @@ def makeProfile(center_xy, radius, dat):
 	return annulusAverage,error, radiusArray
 	
 def main():
-
+	
+	galNames = numpy.genfromtxt('galaxy_names.txt', dtype='S10')
 	coma = pyfits.open('POSIIF_Coma.fits')
 	head = coma[0].header
 	dat = coma[0].data
@@ -146,9 +147,10 @@ def main():
 	comaRegName = "POSIIF_Coma.reg"
 	comaReg = pyregion.open(comaRegName)#.as_imagecoord(head)
 
-	for reg in comaReg:
+	for i, reg in enumerate(comaReg):
 		center_xy = reg.coord_list[0], reg.coord_list[1]
 		radius = reg.coord_list[2]
+		name = galNames[i]
 		brightCenter = centroid_bright(center_xy,radius,dat)
 		newCenter = centroid_weighted(center_xy,radius,dat)
 		newRadius = getRadius(newCenter, radius, dat)
@@ -164,6 +166,7 @@ def main():
 		plt.xlabel('radius (in arcsec)')
 		plt.ylabel('counts/arcsec^2')
 		plt.show()
+		plt.savefig(name,format='png')
 		for rr, rVal in enumerate(r):
 			maxFlux = max(profile)
 			if profile[rr] <= 0.5*maxFlux:
@@ -172,7 +175,7 @@ def main():
 			halfLight = max(r)
 		print halfLight
 				
-		
+	plt.clf
 	maxval = numpy.amax(dat)
 	ax=plt.subplot(111)
 	ax.imshow(dat,cmap=cm.gray, vmin=0., vmax=maxval, origin="lower")
@@ -183,6 +186,7 @@ def main():
 		ax.add_artist(t)
 
 	plt.show()
+	plt.savefig('ComaRegion',format='png')
 	
 	coma.close()
 
