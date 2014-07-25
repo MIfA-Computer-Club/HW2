@@ -137,12 +137,13 @@ def find_centroid(image, aperture, mode='com', adjust=True):
     mode : {'com', '2dgauss', 'marginal'}, optional
         The method for computing the centroid. Default is 'com'.
 
-        - 'com': Center of mass. More precise than 'marginal'. Faster than
-          '2dgauss', but not always as precise.
+        - 'com': Center of mass. Faster than '2dgauss', but not always as
+          accurate.
         - '2dgauss': Fit a 2d Gaussian function using `fit_gaussian`. Most
-          precise, but also the slowest.
+          accurate, but also the slowest.
         - 'marginal': Measure the peaks in the x and y marginal
-          distributions. This method cannot achieve subpixel precision.
+          distributions. This method cannot achieve subpixel precision, and
+          is therefore the least precise method.
 
     adjust : bool, optional
         If True (default), the aperture's `xy0` attribute is set to the
@@ -309,7 +310,7 @@ def apphot(image, aperture_list, median_type='weighted', unbiased=False):
         area = aperture.weights
         total_area = np.sum(area)
 
-        mask = np.isnan(data) | area == 0
+        mask = (np.isnan(data)) | (area == 0)
         if np.sum(mask) == mask.size:
             total_flux = np.nan
             median_intensity = np.nan
@@ -337,7 +338,9 @@ def apphot(image, aperture_list, median_type='weighted', unbiased=False):
             std_intensity = np.sqrt(
                 np.sum(area * (intensity - mean_intensity)**2) / denominator)
 
-        row = (aperture.label, total_area, total_flux,
+        label = '' if aperture.label is None else aperture.label
+
+        row = (label, total_area, total_flux,
                median_intensity, mean_intensity, std_intensity)
         rows.append(row)
 
@@ -345,6 +348,13 @@ def apphot(image, aperture_list, median_type='weighted', unbiased=False):
     dtypes = (str, float, float, float, float, float)
     if ASTROPY_INSTALLED:
         table = astropy.table.Table(data=zip(*rows), names=names, dtype=dtypes)
+        # astropy 0.4:
+        #table = astropy.table.Table(rows=rows, names=names, dtype=dtypes)
     else:
+        # numpy apparently prefers that character columns have a definite size,
+        # and a size of at least 2 if the strings are empty
+        smax = max(max(len(row[0]) for row in rows), 2)
+        dtypes = list(dtypes)
+        dtypes[0] = 'S{:d}'.format(smax)
         table = np.array(rows, dtype=zip(names, dtypes))
     return table

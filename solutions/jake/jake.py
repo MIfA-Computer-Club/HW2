@@ -1,4 +1,6 @@
+import astropy.coordinates
 import astropy.io.fits
+import astropy.wcs
 import matplotlib.gridspec
 import matplotlib.patches
 import matplotlib.pyplot as plt
@@ -9,21 +11,31 @@ import os
 import galaxyphot
 
 
-REPO_DIR = '/Users/Jake/Research/code/computer_club/cc2.0/HW2'
+REPO_DIR = '/Users/Jake/Research/code/computer_club/HW2'  # winston
+#REPO_DIR = '/Users/Jake/Research/code/computer_club/cc2.0/HW2'  # mbook
 
 
-def problem_1():
+def problem_1(load_only=False):
     # Load image data
     img_file = os.path.join(REPO_DIR, 'POSIIF_Coma.fits')
-    image = astropy.io.fits.getdata(img_file)
+    image, hdr = astropy.io.fits.getdata(img_file, header=True)
 
     # Create apertures from the DS9 region file, measure the centroids of
     # the sources and reposition the apertures
     reg_file = os.path.join(REPO_DIR, 'POSIIF_Coma.reg')
     aperture_list = galaxyphot.from_region_file(reg_file)
+
+    xy1_list, xy2_list = [], []
     for aperture in aperture_list:
-        xy1 = aperture.xy0
+        xy1_list.append(aperture.xy0)
+        # Note: 'com' is much faster than '2dgauss', but not quite as accurate
         xy2 = galaxyphot.find_centroid(image, aperture, mode='2dgauss')
+        xy2_list.append(xy2)
+
+    if load_only:
+        return image, hdr, aperture_list
+
+    for xy1, xy2 in zip(xy1_list, xy2_list):
         line = '{0:s}    old: {1:8.3f} {2:8.3f}    new: {3:8.3f} {4:8.3f}'
         print line.format(aperture.label, xy1[0], xy1[1], xy2[0], xy2[1])
     print
@@ -94,46 +106,52 @@ def problem_1():
     filename = os.path.join(REPO_DIR, 'solutions', 'jake', 'galaxies.pdf')
     fig.savefig(filename, dpi=200)
 
-    return aperture_list
+    return image, hdr, aperture_list
 
 
-def problem_2(aperture_list):
+def problem_2(image, aperture_list):
     # Aperture phot in counts/pix2, accounting for background flux, and
     # convert to counts/arcsec2.
 
-    # Load image data
-    img_file = os.path.join(REPO_DIR, 'POSIIF_Coma.fits')
-    image = astropy.io.fits.getdata(img_file)
-
+    # Photometry
     apphot = galaxyphot.apphot(image, aperture_list)
-    total = apphot['total']
-    for row in apphot:
-        print '{0:s}: {1:.2e}'.format(row['label'], row['total'])
 
-    #for aperture in aperture_list:
-    #    # Total counts
-    #    counts = np.sum(aperture.extract(image) * weights)
+    # Determine pixel area in arcsec2
+    wcs = astropy.wcs.WCS(hdr)
+    x, y = np.array([hdr['crpix1'], hdr['crpix2']])
+    ra, dec = wcs.wcs_pix2world([x, x+1, x], [y, y, y+1], 1)
+    points = astropy.coordinates.ICRS(ra, dec, unit=wcs.wcs.cunit)
+    dxy = astropy.coordinates.Angle([points[0].separation(points[1]),
+                                     points[0].separation(points[2])])
+    pixel_area = np.multiply(*dxy.arcsec)
 
-    #    print '{0:s}: {1:.2e}'.format(aperture.label, counts)
+    print ('galaxy     intensity\n'
+           '           (cnt/arcsec2)\n'
+           '---------- -------------')
+    for label, mean in apphot['label', 'mean']:
+        mean_arcsec2 = mean / pixel_area
+        print '{0:10s} {1:13.2e}'.format(label, mean_arcsec2)
 
-    #    """
-    #    NGC4875: 8.59e+06
-    #    NGC4869: 9.52e+06
-    #    GMP4277: 1.36e+07
-    #    GMP4350: 1.26e+07
-    #    NGC4860: 1.24e+07
-    #    NGC4881: 3.54e+07
-    #    NGC4921: 2.64e+08
+    """
+    galaxy   intensity
+             (cnt/pix2)
+    -------- ----------
+    NGC4875: 6.84e+03
+    NGC4869: 1.09e+04
+    GMP4277: 7.54e+03
+    GMP4350: 6.98e+03
+    NGC4860: 9.91e+03
+    NGC4881: 6.55e+03
+    NGC4921: 5.48e+03
 
-    #    """
+    """
 
     return
 
 
-
 def main():
-    aperture_list = problem_1()
-    problem_2(aperture_list)
+    image, hdr, aperture_list = problem_1(load_only=False)
+    problem_2(image, hdr, aperture_list)
 
 
 if __name__ == '__main__':
@@ -157,22 +175,3 @@ if __name__ == '__main__':
 
 
 # 5. Half-light radius (arcsec) of the profiles.
-
-
-
-def testplot(ap, arr, grid=False, cmap= plt.cm.gist_heat):
-    plt.cla()
-    x = np.linspace(ap.xmin, ap.xmax, 1000)
-    y1 = np.sqrt(ap.r**2 - (x-ap.x)**2) + ap.y
-    y2 = -np.sqrt(ap.r**2 - (x-ap.x)**2) + ap.y
-    extent = (ap.jmin+0.5, ap.jmax+1.5, ap.imin+0.5, ap.imax+1.5)
-    plt.imshow(arr, origin='lower', interpolation='nearest', extent=extent,
-               cmap=cmap)
-    plt.plot(np.hstack((x, x[::-1])), np.hstack((y1, y2[::-1])), 'g-')
-    plt.plot(ap.x, ap.y, 'gx')
-    if grid:
-        xl = np.arange(ap.jmin+0.5, ap.jmax+1.5)
-        yl = np.arange(ap.imin+0.5, ap.imax+1.5)
-        plt.vlines(xl, extent[2], extent[3])
-        plt.hlines(yl, extent[0], extent[1])
-    plt.axis(extent)
