@@ -29,7 +29,9 @@ Functions
 ================== ==========================================
 
 """
+import matplotlib.patches
 import matplotlib.path
+import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -53,8 +55,8 @@ class ApertureBase(object):
 
     Attributes
     ----------
-    grid
     extent
+    grid
     ijextent
     ijlimits
     limits
@@ -66,6 +68,11 @@ class ApertureBase(object):
         total number of subpixel samples for a border pixel is ``nsub**2``.
         Small apertures require larger `nsub` values to maintain accuracy,
         while smaller `nsub` values will suffice for large apertures.
+
+    Methods
+    -------
+    extract
+    plot
 
     Notes
     -----
@@ -159,6 +166,21 @@ class ApertureBase(object):
     def extract(self, image):
         return extract(image, self)
 
+    def plot(self, ax=None, draw=False, **kwargs):
+        """Plot `patch`, the patch representation of the aperture. Accepts
+        all valid patch keyword arguments. Default is to create a new plot,
+        but the patch can be added to an existing axis with the `ax`
+        keyword. If `draw` is True, ``plt.draw()`` is called after adding
+        the patch (default is False).
+
+        """
+        if ax is None:
+            ax = plt.subplot(1, 1, 1)
+        ax.add_patch(self.patch(**kwargs))
+        if draw:
+            plt.draw()
+        return
+
 
 class CircularAperture(ApertureBase):
 
@@ -179,6 +201,7 @@ class CircularAperture(ApertureBase):
 
     Attributes
     ----------
+    area
     r
     weights
     xy0
@@ -186,6 +209,7 @@ class CircularAperture(ApertureBase):
     Methods
     -------
     copy
+    patch
 
     Notes
     -----
@@ -207,7 +231,7 @@ class CircularAperture(ApertureBase):
 
     @xy0.setter
     def xy0(self, xy0):
-        xy0 = np.array(xy0)
+        xy0 = np.array(xy0, dtype=float)
         if xy0.shape != (2,):
             raise ValueError('xy0 is not (2,) array_like')
         self._xy0 = xy0
@@ -220,6 +244,14 @@ class CircularAperture(ApertureBase):
     @r.setter
     def r(self, r):
         self._r = float(r)
+
+    @property
+    def area(self):
+        """Exact area of the aperture in pixels. Can be compared with the
+        sum of `weights` to determine if `nsub` is sufficiently large.
+
+        """
+        return np.pi * self.r**2
 
     @property
     def _limits(self):
@@ -246,7 +278,7 @@ class CircularAperture(ApertureBase):
         r = np.sqrt((x - x0)**2 + (y - y0)**2)
 
         # Pixels with centers within the aperture
-        weights = (r <= r0).astype('float')
+        weights = (r <= r0).astype(float)
 
         # Partial pixels
         if self.nsub > 1:
@@ -269,7 +301,7 @@ class CircularAperture(ApertureBase):
             subr = np.sqrt((subx - x0)**2 + (suby - y0)**2)
 
             # Refined pixel weights along the border
-            kwargs = dict(axis=(1, 2), dtype='float')
+            kwargs = dict(axis=(1, 2), dtype=float)
             weights[i,j] = np.sum(subr <= r0, **kwargs) / nsub**2
 
         return weights
@@ -282,21 +314,220 @@ class CircularAperture(ApertureBase):
         nsub = self.nsub
         return CircularAperture(xy0, r, label=label, nsub=nsub)
 
+    def patch(self, **kwargs):
+        """Return a `matplotlib.patches.Circle` patch representation of the
+        aperture for plotting. Accepts all valid patch keyword arguments.
+
+        """
+        kwargs['radius'] = self.r
+        return matplotlib.patches.Circle(self.xy0, **kwargs)
+
 
 class CircularAnnulus(object):
 
     """A ciruclar annulus aperture.
 
+    This is essentially a wrapper around two `CircularAperture` instances,
+    with some extra functionality to make them work together.
+
+    Parameters
+    ----------
+    xy0 : (2,) array_like
+        Initialize the `xy0` property.
+    r1 : float
+        Initialize the `r1` property.
+    r2 : float
+        Initialize the `r2` property.
+    label : str, optional
+        Initialize the `ApertureBase.label` property. Default is None.
+    nsub : int, optional
+        Initialize the `ApertureBase.nsub` property. Default is 50.
+
+    Attributes
+    ----------
+    area
+    extent
+    grid
+    ijextent
+    ijlimits
+    label
+    limits
+    nsub
+    r1
+    r2
+    weights
+    xy0
+
+    Methods
+    -------
+    copy
+    extract
+    patch
+
     """
 
     def __init__(self, xy0, r1, r2, label=None, nsub=50):
-        # Which should be anchor?
-        # Constraints on r1 and r2? e.g., 0 < r1 < r2
-        self._outer = CircularAperture(xy0, r2, label=label, nsub=nsub)
         self._inner = CircularAperture(xy0, r1, label=label, nsub=nsub)
+        self._outer = CircularAperture(xy0, r2, label=label, nsub=nsub)
+        self.xy0 = xy0
+        self.r1 = r1
+        self.r2 = r2
+        self.nsub = nsub
+        self.label = label
 
     @property
     def xy0(self):
+        """(2,) ndarray. x and y pixel coordinates of the center."""
+        return self._inner.xy0
+
+    @xy0.setter
+    def xy0(self, xy0):
+        self._inner.xy0 = xy0
+        self._outer._xy0 = self._inner._xy0  # Anchor to inner
+
+    @property
+    def r1(self):
+        """float. Inner radius in pixels."""
+        return self._inner.r
+
+    @r1.setter
+    def r1(self, r):
+        if not 0 < r < self._outer.r:
+            raise ValueError('r1 must be between 0 and r2.')
+        self._inner.r = r
+
+    @property
+    def r2(self):
+        """float. Outer radius in pixels."""
+        return self._outer.r
+
+    @r2.setter
+    def r2(self, r):
+        if not self._inner.r < r:
+            raise ValueError('r2 must be greater than r1.')
+        self._outer.r = r
+
+    @property
+    def area(self):
+        """Exact area of the aperture in pixels. Can be compared with the
+        sum of `weights` to determine if `nsub` is sufficiently large.
+
+        """
+        return np.pi * (self.r2**2 - self.r1**2)
+
+    @property
+    def nsub(self):
+        """See `ApertureBase.nsub`."""
+        return self._inner.nsub
+
+    @nsub.setter
+    def nsub(self, nsub):
+        self._inner.nsub = nsub
+        self._outer.nsub = nsub
+
+    @property
+    def label(self):
+        """See `ApertureBase.label`."""
+        return self._inner.label
+
+    @label.setter
+    def label(self, label):
+        self._inner.label = label
+        self._outer.label = label
+
+    @property
+    def limits(self):
+        """x and y limits of the outer circle. See `ApertureBase.limits`."""
+        return self._outer.limits
+
+    @property
+    def ijlimits(self):
+        """i and j limits of the outer circle. See
+        `ApertureBase.ijlimits`.
+
+        """
+        return self._outer.ijlimits
+
+    @property
+    def ijextent(self):
+        """i and j extent of the outer circle. See
+        `ApertureBase.ijextent`.
+
+        """
+        return self._outer.ijextent
+
+    @property
+    def extent(self):
+        """x and y extent of the outer circle. See `ApertureBase.extent`."""
+        return self._outer.extent
+
+    @property
+    def grid(self):
+        """See `ApertureBase.grid`."""
+        return self._outer.grid
+
+    @property
+    def weights(self):
+        """Difference between the outer and the outer weight arrays. See
+        `CircularAperture.weights`.
+
+        """
+        weights1 = self._inner.weights
+        weights2 = self._outer.weights
+        i1, j1 = self._inner.ijextent[0::2]
+        i2, j2 = self._outer.ijextent[0::2]
+        i0, j0 = i1 - i2, j1 - j2
+        di, dj = weights1.shape
+        ijslice = (slice(i0, i0+di), slice(j0, j0+dj))
+        weights2[ijslice] -= weights1
+        return weights2
+
+    def extract(self, image):
+        return self._outer.extract(image)
+
+    def copy(self):
+        """Return a copy of the aperture."""
+        xy0 = self.xy0.copy()
+        r1 = self.r1
+        r2 = self.r2
+        label = self.label
+        nsub = self.nsub
+        return CircularAnnulus(xy0, r1, r2, label=label, nsub=nsub)
+
+    def patch(self, res=1000, **kwargs):
+        """Return a `matplotlib.patches.PathPatch` patch representation of
+        the aperture for plotting (`matplotlib.patches.Circle` does not
+        currently support holes). Accepts all valid patch keyword
+        arguments. The number of samples along the inner and outer curves
+        is set using the `res` keyword (default is 1000).
+
+        """
+        phi = np.linspace(0, 2*np.pi, res)
+        x1 = self.r1 * np.cos(phi)  # Counter clockwise
+        y1 = self.r1 * np.sin(phi)
+        x2 = self.r2 * np.cos(phi[::-1])  # Clockwise
+        y2 = self.r2 * np.sin(phi[::-1])
+        x, y = np.hstack((x1, x2)), np.hstack((y1, y2))
+        xy = np.vstack((x, y)).T + self.xy0
+        codes = [matplotlib.path.Path.LINETO] * len(x1)
+        codes[0] = matplotlib.path.Path.MOVETO
+        codes = codes * 2
+        path = matplotlib.path.Path(xy, codes)
+        return matplotlib.patches.PathPatch(path, **kwargs)
+
+    def plot(self, ax=None, draw=False, **kwargs):
+        """Plot `patch`, the patch representation of the aperture. Accepts
+        all valid patch keyword arguments. Default is to create a new plot,
+        but the patch can be added to an existing axis with the `ax`
+        keyword. If `draw` is True, ``plt.draw()`` is called after adding
+        the patch (default is False).
+
+        """
+        if ax is None:
+            ax = plt.subplot(1, 1, 1)
+        ax.add_patch(self.patch(**kwargs))
+        if draw:
+            plt.draw()
         return
 
 
@@ -324,6 +555,7 @@ class EllipticalAperture(ApertureBase):
     Attributes
     ----------
     a
+    area
     b
     theta
     weights
@@ -332,6 +564,7 @@ class EllipticalAperture(ApertureBase):
     Methods
     -------
     copy
+    patch
 
     Notes
     -----
@@ -397,7 +630,7 @@ class EllipticalAperture(ApertureBase):
 
     @xy0.setter
     def xy0(self, xy0):
-        xy0 = np.array(xy0)
+        xy0 = np.array(xy0, dtype=float)
         if xy0.shape != (2,):
             raise ValueError('xy0 is not (2,) array_like')
         self._xy0 = xy0
@@ -430,6 +663,14 @@ class EllipticalAperture(ApertureBase):
         self._theta = float(theta)
 
     @property
+    def area(self):
+        """Exact area of the aperture in pixels. Can be compared with the
+        sum of `weights` to determine if `nsub` is sufficiently large.
+
+        """
+        return np.pi * self.a * self.b
+
+    @property
     def _limits(self):
         # Required by ApertureBase
         t = np.radians(self.theta)
@@ -456,7 +697,7 @@ class EllipticalAperture(ApertureBase):
              (-dx * np.sin(t) + dy * np.cos(t))**2 / self.b**2)
 
         # Pixels with centers within the aperture
-        weights = (r <= 1).astype('float')
+        weights = (r <= 1).astype(float)
 
         # Partial pixels
         if self.nsub > 1:
@@ -485,7 +726,7 @@ class EllipticalAperture(ApertureBase):
                     (-subdx * np.sin(t) + subdy * np.cos(t))**2 / self.b**2)
 
             # Refined pixel weights along the border
-            kwargs = dict(axis=(1, 2), dtype='float')
+            kwargs = dict(axis=(1, 2), dtype=float)
             weights[i,j] = np.sum(subr <= 1, **kwargs) / self.nsub**2
 
         return weights
@@ -499,26 +740,282 @@ class EllipticalAperture(ApertureBase):
         nsub = self.nsub
         return EllipticalAperture(xy0, a, b, theta, label=label, nsub=nsub)
 
+    def patch(self, **kwargs):
+        """Return a `matplotlib.patches.Ellipse` patch representation of the
+        aperture for plotting. Accepts all valid patch keyword arguments.
+
+        """
+        kwargs['angle'] = self.theta
+        return matplotlib.patches.Ellipse(
+            self.xy0, 2*self.a, 2*self.b, **kwargs)
+
 
 class EllipticalAnnulus(object):
 
     """An elliptical annulus aperture.
 
+    This is essentially a wrapper around two `EllipticalAperture`
+    instances, with some extra functionality to make them work together.
+
+    Parameters
+    ----------
+    xy0 : (2,) array_like
+        Initialize the `xy0` property.
+    a1 : float
+        Initialize the `a1` property.
+    b1 : float
+        Initialize the `b1` property.
+    a2 : float
+        Initialize the `a2` property.
+    b2 : float
+        Initialize the `b2` property.
+    theta : float
+        Initialize the `theta` property.
+    label : str, optional
+        Initialize the `ApertureBase.label` property. Default is None.
+    nsub : int, optional
+        Initialize the `ApertureBase.nsub` property. Default is 50.
+
+    Attributes
+    ----------
+    a1
+    a2
+    area
+    b1
+    b2
+    extent
+    grid
+    ijextent
+    ijlimits
+    label
+    limits
+    nsub
+    theta
+    weights
+    xy0
+
+    Methods
+    -------
+    copy
+    extract
+    patch
+
     """
 
     def __init__(self, xy0, a1, b1, a2, b2, theta, label=None, nsub=50):
-        # Annulus is completely described by three axis parameters; the
-        # fourth is derived. If all are given, ignore b2 for consistency
-        if not None in (a1, b1, a2, b2): b2 = None
-        if a1 is None:
-            a1 = a2 * b1 / b2
-        elif b1 is None:
-            b1 = b2 * a1 / a2
-        elif a2 is None:
-            a2 = a1 * b2 / b1
-        elif b2 is None:
-            b2 = b1 * a2 / a1
-        pass
+        self._inner = EllipticalAperture(
+            xy0, a1, b1, theta=theta, label=label, nsub=nsub)
+        self._outer = EllipticalAperture(
+            xy0, a2, b2, theta=theta, label=label, nsub=nsub)
+        self.xy0 = xy0
+        self.a1 = a1
+        self.b1 = b1
+        self.a2 = a2
+        self.b2 = b2
+        self.theta = theta
+        self.nsub = nsub
+        self.label = label
+
+    @property
+    def xy0(self):
+        """(2,) ndarray. x and y pixel coordinates of the center."""
+        return self._inner.xy0
+
+    @xy0.setter
+    def xy0(self, xy0):
+        self._inner.xy0 = xy0
+        self._outer._xy0 = self._inner._xy0  # Anchor to inner
+
+    @property
+    def a1(self):
+        """float. Inner semimajor axis in pixels."""
+        return self._inner.a
+
+    @a1.setter
+    def a1(self, a):
+        if not 0 < a < self._outer.a:
+            raise ValueError('a1 must be between 0 and a2.')
+        self._inner.a = a
+
+    @property
+    def b1(self):
+        """float. Inner semiminor axis in pixels."""
+        return self._inner.b
+
+    @b1.setter
+    def b1(self, b):
+        if not 0 < b < self._outer.b:
+            raise ValueError('b1 must be between 0 and b2.')
+        self._inner.b = b
+
+    @property
+    def a2(self):
+        """float. Outer semimajor axis in pixels."""
+        return self._outer.a
+
+    @a2.setter
+    def a2(self, a):
+        if not self._inner.a < a:
+            raise ValueError('a2 must be greater than a1.')
+        self._outer.a = a
+
+    @property
+    def b2(self):
+        """float. Outer semiminor axis in pixels."""
+        return self._outer.b
+
+    @b2.setter
+    def b2(self, b):
+        if not self._inner.b < b:
+            raise ValueError('b2 must be greater than b1.')
+        self._outer.b = b
+
+    @property
+    def theta(self):
+        """float. Counter clockwise rotation angle in degrees."""
+        return self._inner.theta
+
+    @theta.setter
+    def theta(self, theta):
+        self._inner.theta = theta
+        self._outer.theta = theta
+
+    @property
+    def area(self):
+        """Exact area of the aperture in pixels. Can be compared with the
+        sum of `weights` to determine if `nsub` is sufficiently large.
+
+        """
+        return np.pi * (self.a2 * self.b2 - self.a1 * self.b1)
+
+    @property
+    def nsub(self):
+        """See `ApertureBase.nsub`."""
+        return self._inner.nsub
+
+    @nsub.setter
+    def nsub(self, nsub):
+        self._inner.nsub = nsub
+        self._outer.nsub = nsub
+
+    @property
+    def label(self):
+        """See `ApertureBase.label`."""
+        return self._inner.label
+
+    @label.setter
+    def label(self, label):
+        self._inner.label = label
+        self._outer.label = label
+
+    @property
+    def limits(self):
+        """x and y limits of the outer ellipse. See `ApertureBase.limits`."""
+        return self._outer.limits
+
+    @property
+    def ijlimits(self):
+        """i and j limits of the outer ellipse. See
+        `ApertureBase.ijlimits`.
+
+        """
+        return self._outer.ijlimits
+
+    @property
+    def ijextent(self):
+        """i and j extent of the outer ellipse. See
+        `ApertureBase.ijextent`.
+
+        """
+        return self._outer.ijextent
+
+    @property
+    def extent(self):
+        """x and y extent of the outer ellipse. See
+        `ApertureBase.extent`.
+
+        """
+        return self._outer.extent
+
+    @property
+    def grid(self):
+        """See `ApertureBase.grid`."""
+        return self._outer.grid
+
+    @property
+    def weights(self):
+        """Difference between the outer and the outer weight arrays. See
+        `EllipticalAperture.weights`.
+
+        """
+        weights1 = self._inner.weights
+        weights2 = self._outer.weights
+        i1, j1 = self._inner.ijextent[0::2]
+        i2, j2 = self._outer.ijextent[0::2]
+        i0, j0 = i1 - i2, j1 - j2
+        di, dj = weights1.shape
+        ijslice = (slice(i0, i0+di), slice(j0, j0+dj))
+        weights2[ijslice] -= weights1
+        return weights2
+
+    def extract(self, image):
+        return self._outer.extract(image)
+
+    def copy(self):
+        """Return a copy of the aperture."""
+        xy0 = self.xy0.copy()
+        a1 = self.a1
+        b1 = self.b1
+        a2 = self.a2
+        b2 = self.b2
+        theta = self.theta
+        label = self.label
+        nsub = self.nsub
+        return EllipticalAnnulus(
+            xy0, a1, b1, a2, b2, theta, label=label, nsub=nsub)
+
+    def patch(self, res=1000, **kwargs):
+        """Return a `matplotlib.patches.PathPatch` patch representation of
+        the aperture for plotting (`matplotlib.patches.Ellipse` does not
+        currently support holes). Accepts all valid patch keyword
+        arguments. The number of samples along the inner and outer curves
+        is set using the `res` keyword (default is 1000).
+
+        """
+        a1, b1 = self.a1, self.b1
+        a2, b2 = self.a2, self.b2
+        theta = np.radians(self.theta)
+        phi = np.linspace(0, 2*np.pi, res)
+        x1 = (a1 * np.cos(phi) * np.cos(theta) -
+              b1 * np.sin(phi) * np.sin(theta))  # Counter clockwise
+        y1 = (a1 * np.cos(phi) * np.sin(theta) +
+              b1 * np.sin(phi) * np.cos(theta))
+        x2 = (a2 * np.cos(phi[::-1]) * np.cos(theta) -
+              b2 * np.sin(phi[::-1]) * np.sin(theta))  # Clockwise
+        y2 = (a2 * np.cos(phi[::-1]) * np.sin(theta) +
+              b2 * np.sin(phi[::-1]) * np.cos(theta))
+        x, y = np.hstack((x1, x2)), np.hstack((y1, y2))
+        xy = np.vstack((x, y)).T + self.xy0
+        codes = [matplotlib.path.Path.LINETO] * len(x1)
+        codes[0] = matplotlib.path.Path.MOVETO
+        codes = codes * 2
+        path = matplotlib.path.Path(xy, codes)
+        return matplotlib.patches.PathPatch(path, **kwargs)
+
+    def plot(self, ax=None, draw=False, **kwargs):
+        """Plot `patch`, the patch representation of the aperture. Accepts
+        all valid patch keyword arguments. Default is to create a new plot,
+        but the patch can be added to an existing axis with the `ax`
+        keyword. If `draw` is True, ``plt.draw()`` is called after adding
+        the patch (default is False).
+
+        """
+        if ax is None:
+            ax = plt.subplot(1, 1, 1)
+        ax.add_patch(self.patch(**kwargs))
+        if draw:
+            plt.draw()
+        return
 
 
 class PolygonAperture(ApertureBase):
@@ -547,6 +1044,7 @@ class PolygonAperture(ApertureBase):
     Methods
     -------
     copy
+    patch
 
     """
 
@@ -566,7 +1064,7 @@ class PolygonAperture(ApertureBase):
     @xy.setter
     def xy(self, xy):
         if np.all(xy[0] == xy[-1]):  # xy is closed
-            xy = np.array(xy)
+            xy = np.array(xy, dtype=float)
         else:  # xy is open
             xy = np.vstack((xy, xy[0]))
         if xy.shape != (len(xy), 2):
@@ -598,7 +1096,7 @@ class PolygonAperture(ApertureBase):
 
     @xy0.setter
     def xy0(self, xy0):
-        xy0 = np.array(xy0)
+        xy0 = np.array(xy0, dtype=float)
         if xy0.shape != (2,):
             raise ValueError('xy0 is not (2,) array_like')
         self._xy += xy0 - self.xy0
@@ -633,7 +1131,7 @@ class PolygonAperture(ApertureBase):
         x, y = self.grid
         pix = np.vstack(np.broadcast_arrays(x, y)).reshape(2, -1).T
         weights = (self.path.contains_points(pix)
-                   .reshape(y.size, x.size).astype('float'))
+                   .reshape(y.size, x.size).astype(float))
 
         # Partial pixels
         if self.nsub > 1:
@@ -659,7 +1157,7 @@ class PolygonAperture(ApertureBase):
             for shift in shift_list:
                 path.vertices += shift
                 bordertest += bordertest | w != path.contains_points(pix)
-            bordertest = bordertest.reshape(y.size, x.size).astype('float')
+            bordertest = bordertest.reshape(y.size, x.size).astype(float)
 
             # Lower-left corners of border pixels
             i, j = np.where(bordertest)
@@ -679,7 +1177,7 @@ class PolygonAperture(ApertureBase):
                           .reshape(np.broadcast(subx, suby).shape))
 
             # Refined pixel weights along the border
-            kwargs = dict(axis=(1, 2), dtype='float')
+            kwargs = dict(axis=(1, 2), dtype=float)
             weights[i, j] = np.sum(subweights, **kwargs) / self.nsub**2
 
         return weights
@@ -690,6 +1188,14 @@ class PolygonAperture(ApertureBase):
         label = self.label
         nsub = self.nsub
         return PolygonAperture(xy, label=label, nsub=nsub)
+
+    def patch(self, **kwargs):
+        """Return a `matplotlib.patches.PathPatch` patch representation of
+        the aperture for plotting. Accepts all valid patch keyword
+        arguments.
+
+        """
+        return matplotlib.patches.PathPatch(self.path, **kwargs)
 
 
 def extract(image, aperture):
@@ -793,7 +1299,7 @@ def from_region_file(filename):
                 aperture = EllipticalAperture((x, y), a, b, theta, label=label)
                 aperture_list.append(aperture)
             elif line.startswith('polygon'):
-                xy = np.array(line.split()[1:], 'float').reshape(-1, 2)
+                xy = np.array(line.split()[1:], dtype=float).reshape(-1, 2)
                 aperture = PolygonAperture(xy, label=label)
                 aperture_list.append(aperture)
             else:
