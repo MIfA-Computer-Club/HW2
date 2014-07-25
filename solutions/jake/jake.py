@@ -9,20 +9,21 @@ import os
 import galaxyphot
 
 
+REPO_DIR = '/Users/Jake/Research/code/computer_club/cc2.0/HW2'
+
+
 def problem_1():
     # Load image data
-    repo_dir = '/Users/Jake/Research/code/computer_club/HW2'
-    img_file = os.path.join(repo_dir, 'POSIIF_Coma.fits')
-    data = astropy.io.fits.getdata(img_file)
+    img_file = os.path.join(REPO_DIR, 'POSIIF_Coma.fits')
+    image = astropy.io.fits.getdata(img_file)
 
     # Create apertures from the DS9 region file, measure the centroids of
     # the sources and reposition the apertures
-    reg_file = os.path.join(repo_dir, 'POSIIF_Coma.reg')
+    reg_file = os.path.join(REPO_DIR, 'POSIIF_Coma.reg')
     aperture_list = galaxyphot.from_region_file(reg_file)
     for aperture in aperture_list:
-        aperture.image = data
-        xy1 = aperture.xy
-        xy2 = aperture.centroid(adjust=True, mode='2dgauss')
+        xy1 = aperture.xy0
+        xy2 = galaxyphot.find_centroid(image, aperture, mode='2dgauss')
         line = '{0:s}    old: {1:8.3f} {2:8.3f}    new: {3:8.3f} {4:8.3f}'
         print line.format(aperture.label, xy1[0], xy1[1], xy2[0], xy2[1])
     print
@@ -51,7 +52,7 @@ def problem_1():
     for aperture, spec in zip(aperture_list, gs):
         ax = plt.subplot(spec)
 
-        data = aperture.section.copy()
+        data = aperture.extract(image).copy()
 
         # Find vmin and vmax to scale the image from pmin to pmax
         values = np.sort(data.ravel())
@@ -69,20 +70,20 @@ def problem_1():
         # Plot image and aperture
         ax.imshow(
             data, origin='lower', interpolation='nearest',
-            extent=aperture.xyextent, cmap=cmap, vmin=vmin, vmax=vmax)
-        ax.plot(aperture.x, aperture.y, 'cx', mew=1)
+            extent=aperture.extent, cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.plot(aperture.xy0[0], aperture.xy0[1], 'cx', mew=1)
         circle = matplotlib.patches.Circle(
-            (aperture.x, aperture.y), radius=aperture.r, ec='k', fc='none',
+            aperture.xy0, radius=aperture.r, ec='k', fc='none',
             alpha=0.3, zorder=10)
         ax.add_patch(circle)
 
         # Text
         txtkw = dict(transform=ax.transAxes, zorder=50)
         ax.text(0.03, 0.92, aperture.label, size=10, **txtkw)
-        ax.text(0.03, 0.85, 'x = {:.3f}'.format(aperture.x), size=8, **txtkw)
-        ax.text(0.03, 0.78, 'y = {:.3f}'.format(aperture.y), size=8, **txtkw)
+        ax.text(0.03, 0.85, 'x = {:.3f}'.format(aperture.xy0[0]), size=8, **txtkw)
+        ax.text(0.03, 0.78, 'y = {:.3f}'.format(aperture.xy0[1]), size=8, **txtkw)
 
-        ax.axis(aperture.xyextent)
+        ax.axis(aperture.extent)
         ax.xaxis.set_visible(False)
         ax.yaxis.set_visible(False)
 
@@ -90,7 +91,7 @@ def problem_1():
 
     fig  = ax_list[0].figure
     fig.set_size_inches((fig_dx, fig_dy))
-    filename = os.path.join(repo_dir, 'solutions', 'jake', 'galaxies.pdf')
+    filename = os.path.join(REPO_DIR, 'solutions', 'jake', 'galaxies.pdf')
     fig.savefig(filename, dpi=200)
 
     return aperture_list
@@ -100,23 +101,31 @@ def problem_2(aperture_list):
     # Aperture phot in counts/pix2, accounting for background flux, and
     # convert to counts/arcsec2.
 
-    for aperture in aperture_list:
-        # Total counts
-        weights = aperture.weights()
-        counts = np.sum(aperture.section * weights)
+    # Load image data
+    img_file = os.path.join(REPO_DIR, 'POSIIF_Coma.fits')
+    image = astropy.io.fits.getdata(img_file)
 
-        print '{0:s}: {1:.2e}'.format(aperture.label, counts)
+    apphot = galaxyphot.apphot(image, aperture_list)
+    total = apphot['total']
+    for row in apphot:
+        print '{0:s}: {1:.2e}'.format(row['label'], row['total'])
 
-        """
-        NGC4875: 8.59e+06
-        NGC4869: 9.52e+06
-        GMP4277: 1.36e+07
-        GMP4350: 1.26e+07
-        NGC4860: 1.24e+07
-        NGC4881: 3.54e+07
-        NGC4921: 2.64e+08
+    #for aperture in aperture_list:
+    #    # Total counts
+    #    counts = np.sum(aperture.extract(image) * weights)
 
-        """
+    #    print '{0:s}: {1:.2e}'.format(aperture.label, counts)
+
+    #    """
+    #    NGC4875: 8.59e+06
+    #    NGC4869: 9.52e+06
+    #    GMP4277: 1.36e+07
+    #    GMP4350: 1.26e+07
+    #    NGC4860: 1.24e+07
+    #    NGC4881: 3.54e+07
+    #    NGC4921: 2.64e+08
+
+    #    """
 
     return
 

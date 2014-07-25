@@ -1,7 +1,7 @@
 import galaxyphot
+import matplotlib.path
+import matplotlib.patches
 import numpy as np
-
-imshowkw = dict(origin='lower', interpolation='nearest', cmap=plt.cm.gist_heat)
 
 amp = 4.0
 xp, yp = 24.3, 37.1
@@ -9,254 +9,158 @@ ap, bp = 3.2, 1.8
 thetap = 30.0
 
 y, x = np.ogrid[1:51,1:51]  # pixel coords of pixel centers
-data = galaxyphot.gaussian2d(x, y, amp, xp, yp, ap, bp, thetap)
+image = galaxyphot.gaussian2d(x, y, amp, xp, yp, ap, bp, thetap)
 
-dextent = (0.5, data.shape[1]+0.5, 0.5, data.shape[0]+0.5)
+#dextent = (0.5, data.shape[1]+0.5, 0.5, data.shape[0]+0.5)
 #plt.cla()
 #plt.imshow(data, extent=dextent, **imshowkw)
 
-x0, y0, r = xp-1.1, yp+1.3, ap*2
-self = galaxyphot.CircularAperture((x0, y0), r, label='myap')
-#x0, y0, a, b, theta = xp-1.1, yp+1.3, ap-0.7, bp+0.7, thetap+15
-#self = galaxyphot.EllipticalAperture((x0, y0), a, b, theta, image=data)
-
-plt.cla()
-extent = np.roll(self.ijextent, 2)
-plt.imshow(self.weights, extent=extent, **imshowkw)
-#patch = matplotlib.patches.Ellipse((self.j, self.i), 2*self.a, 2*self.b, angle=self.theta, ec='g', fc='none')
-patch = matplotlib.patches.Circle((self.j, self.i), radius=self.r, ec='g', fc='none')
-plt.gca().add_patch(patch)
-plt.plot(self.j, self.i, 'gx')
-plt.axis(extent)
-
-self.centroid(mode='2dgauss', adjust=True)
-plt.figure(2)
-extent = np.roll(self.ijextent, 2)
-plt.imshow(self.section, extent=extent, **imshowkw)
-patch2 = matplotlib.patches.Ellipse((self.j, self.i), 2*self.a, 2*self.b, angle=self.theta, ec='g', fc='none')
-plt.gca().add_patch(patch2)
-#jj = np.linspace(self.jmin, self.jmax, 100)
-#ii1 = np.sqrt(self.r**2 - (jj-self.j)**2) + self.i
-#ii2 = -np.sqrt(self.r**2 - (jj-self.j)**2) + self.i
-#plt.plot(np.hstack((jj, jj[::-1])), np.hstack((ii1, ii2[::-1])), 'g-')
-plt.plot(self.j, self.i, 'gx')
-plt.axis(extent)
-
-res = self.fit_gaussian()
-x1, y1, a1, b1, theta1 = res[1:]
-self.xy = x1, y1
-self.a, self.b = 2*a1, 2*b1
-self.theta = theta1
-plt.figure(3)
-extent = np.roll(self.ijextent, 2)
-plt.imshow(self.section, extent=extent, **imshowkw)
-patch3 = matplotlib.patches.Ellipse((self.j, self.i), 2*self.a, 2*self.b, angle=self.theta, ec='g', fc='none')
-plt.gca().add_patch(patch3)
-plt.plot(self.j, self.i, 'gx')
-plt.axis(extent)
+x0, y0, a, b, theta = xp-1.1, yp+1.3, 2*ap-0.7, 2*bp+0.7, thetap+15
+r = a
+v0 = a*np.array([[1, 0], [0.5, 1], [-0.5, 1], [-1, 0], [-0.5, -1], [0.5, -1]]) + np.array([x0, y0])
+cap = galaxyphot.CircularAperture((x0, y0), r)
+eap = galaxyphot.EllipticalAperture((x0, y0), a, b, theta)
+pap = galaxyphot.PolygonAperture(v0)
 
 
+def testplot(self, arr, pix=True):
+    imshowkw = dict(origin='lower', interpolation='nearest', cmap=plt.cm.gist_heat)
+    patchkw = dict(ec='g', fc='none')
+    extent = self.extent if pix else np.roll(self.ijextent, 2)
+    plt.cla()
+    plt.imshow(arr, extent=extent, **imshowkw)
+    if isinstance(self, galaxyphot.CircularAperture):
+        patch = matplotlib.patches.Circle
+        xy0 = self.xy0 if pix else self.xy0 - 0.5
+        args = (xy0,)
+        patchkw['radius'] = self.r
+        plt.plot(xy0[0], xy0[1], 'gx')
+    elif isinstance(self, galaxyphot.EllipticalAperture):
+        patch = matplotlib.patches.Ellipse
+        xy0 = self.xy0 if pix else self.xy0 - 0.5
+        args = (xy0, 2*self.a, 2*self.b)
+        patchkw['angle'] = self.theta
+        plt.plot(xy0[0], xy0[1], 'gx')
+    elif isinstance(self, galaxyphot.PolygonAperture):
+        patch = matplotlib.patches.PathPatch
+        vertices = self.path.vertices.copy()
+        if not pix: vertices = vertices - 0.5
+        path = matplotlib.path.Path(vertices, closed=True)
+        args = (self.path,)
+    plt.gca().add_patch(patch(*args, **patchkw))
+    plt.axis(extent)
+    return
 
-class Base(object):
 
-    """Everything in this class is derived from `extent`.
+plt.figure(1); testplot(cap, cap.extract(image))
+plt.figure(2); testplot(cap, cap.weights)
 
-    """
+plt.figure(3); testplot(eap, eap.extract(image))
+plt.figure(4); testplot(eap, eap.weights)
 
-    def __init__(self, _range):
-        self._range = _range
+plt.figure(5); testplot(pap, pap.extract(image))
+plt.figure(6); testplot(pap, pap.weights)
 
-    @property
-    def extent(self):
-        """The extent property."""
-        return self._range
+points = np.array([[21, 32], [22, 33], [25, 36], [28, 36], [28, 37], [28, 42]])
+inside = np.array([False, True, True, False, True, False])
+print np.all(pap.path.contains_points(points) == inside)
 
-    @property
-    def xmin(self):
-        """The xmin property."""
-        return self._range[0]
 
-class Child(Base):
+print galaxyphot.fit_gaussian(image, cap)
+print galaxyphot.fit_gaussian(image, eap)
+print galaxyphot.fit_gaussian(image, pap)
 
-    def __init__(self, xy, a, b):
-        self._params = [xy, a, b]
-        super(Child, self).__init__(self._calc_range())
-
-    @property
-    def params(self):
-        """Central container accessed by all parameter properties."""
-        return self._params
-
-    @params.setter
-    def params(self, params):
-        self._params = params
-
-        # Setter instructions to be run when any parameter is updated.
-        # Calculate range for this child class and update.
-        self._range = self._calc_range()
-
-    @property
-    def xy(self):
-        return self._params[0]
-
-    @xy.setter
-    def xy(self, xy):
-        self._params[0] = xy
-        self.params = self._params
-
-    @property
-    def a(self):
-        return self._params[1]
-
-    @a.setter
-    def a(self, a):
-        self._params[1] = a
-        self.params = self._params
-
-    @property
-    def b(self):
-        return self._params[2]
-
-    @b.setter
-    def b(self, b):
-        self._params[2] = b
-        self.params = self._params
-
-    @property
-    def r(self):
-        """The r property."""
-        return np.sqrt(self.a**2 + self.b**2)
-
-    def _calc_range(self):
-        xy, a, b = self.params
-        return (xy[0]-a, xy[0]+a, xy[1]-b, xy[1]+b)
+print galaxyphot.find_centroid(image, cap, mode='2dgauss', adjust=False)
+print galaxyphot.find_centroid(image, eap, mode='2dgauss', adjust=False)
+print galaxyphot.find_centroid(image, pap, mode='2dgauss', adjust=False)
 
 
 
 
 
 
-def ay(x, x0, y0, a, b, theta):
-    theta = theta * np.pi/180
-    return np.sin(theta)**2 / a**2 + np.cos(theta)**2 / b**2
+"""
 
-def by(x, x0, y0, a, b, theta):
-    theta = theta * np.pi/180
-    return 2 * (x - x0) * np.sin(theta) * np.cos(theta) * (a**-2 - b**-2)
+# a lot of design inspired by photutils; implementations differ
+image = astropy.io.getdata(img_filename)
+apertures = from_region_file(reg_filename)  # list of CircularAperture instances
+annuli = []
+for aperture in apertures:
+    aperture.xy = find_centroid(image, aperture)
+    annuli.append(CircularAnnulus(...))
+apphot = measure_photometry(image, apertures, nsub=50)  # label, total (weighted), area (npix), median, std
+anphot = measure_photometry(image, annuli, nsub=50)
+total = apphot['total']
+background = anphot['median'] * apphot['area']
+signal = total - background
+noise = np.sqrt(total + background)
 
-def cy(x, x0, y0, a, b, theta):
-    theta = theta * np.pi/180
-    return (x - x0)**2 * (np.cos(theta)**2 / a**2 + np.sin(theta)**2 / b**2) - 1
-
-def ey1(x, x0, y0, a, b, theta):
-    Ay = ay(x, x0, y0, a, b, theta)
-    By = by(x, x0, y0, a, b, theta)
-    Cy = cy(x, x0, y0, a, b, theta)
-    term = np.sqrt(By**2 - 4*Ay*Cy)
-    y = (-By + term) / 2 / Ay + y0
-    return y
-
-def ey2(x, x0, y0, a, b, theta):
-    Ay = ay(x, x0, y0, a, b, theta)
-    By = by(x, x0, y0, a, b, theta)
-    Cy = cy(x, x0, y0, a, b, theta)
-    term = np.sqrt(By**2 - 4*Ay*Cy)
-    y = (-By - term) / 2 / Ay + y0
-    return y
-
-def xrange(x0, y0, a, b, theta):
-    theta = theta * np.pi/180
-    xmin = -np.sqrt(a**2 * np.cos(theta)**2 + b**2 * np.sin(theta)**2) + x0
-    xmax = np.sqrt(a**2 * np.cos(theta)**2 + b**2 * np.sin(theta)**2) + x0
-    return xmin, xmax
-
-def yrange(x0, y0, a, b, theta):
-    theta = theta * np.pi/180
-    ymin = -np.sqrt(a**2 * np.sin(theta)**2 + b**2 * np.cos(theta)**2) + y0
-    ymax = np.sqrt(a**2 * np.sin(theta)**2 + b**2 * np.cos(theta)**2) + y0
-    return ymin, ymax
-
-#x = np.linspace(0, 8, 801)
-#y1, y2 = ey1(x, *args), ey2(x, *args)
-#idx = -np.isnan(y1)  # same as y2
-#x, y1, y2 = x[idx], y1[idx], y2[idx]
-#xmin, xmax = xrange(*args)
-#ymin, ymax = yrange(*args)
-#plt.plot(np.hstack((x, x[::-1])), np.hstack((y1, y2[::-1])), 'k-')
+"""
 
 
 
+x = np.arange(10, dtype=float) + 1
+w = np.ones(len(x), dtype=float)
+plt.plot(np.cumsum(w)-w[0], x, 'ko-')
+
+w[2] = 0.5
+
+
+f0 = np.array([[10, 15, 10], [15, 20, 15], [10, 15, 10]], dtype=float)
+da0 = np.ones(f0.shape, dtype=float)  # Full pixels
+I0 = f0 / da0
+
+da = da0.copy()
+da[(0, -1, 0, -1), (0, 0, -1, -1)] = 0.5  # Areas of pixels in aperture
+f = I0 * da
+I = f / da
+assert np.all(I == I0)  # I = f0/da0 = f/da
+
+f_tot = np.sum(f)
+a_tot = np.sum(da)
+f_mean = np.sum(da * f) / a_tot  # weighted
+I_mean = f_tot / a_tot  # weighted
+
+
+z = np.array([
+    [22242, 19396, 16674, 14322, 11847],
+    [22737, 20634, 17664, 14817, 12342],
+    [23480, 21129, 17664, 14570, 12590],
+    [23604, 21129, 17416, 14446, 12466],
+    [22614, 20139, 16921, 14446, 11971]])
 
 
 
+sum    error   area        surf_bri        surf_err
+               (arcsec**2) (sum/arcsec**2) (sum/arcsec**2)
+437260 661.256 25.3892     17222.3         26.0448
 
-import galaxyphot
-import matplotlib.patches
-
-
-data = np.zeros((50, 50))
-data[0::2,0::2], data[1::2,1::2] = 1, 1
-
-x0, y0 = 24.3, 37.1
-a, b = 10.0, 8.0
-theta = 30.0
-
-self = galaxyphot.EllipticalAperture((x0, y0), a, b, theta, image=data)
-weights = self.weights()
-
-extent = np.roll(self.ijextent, 2)
-plt.cla()
-#arr = self.section
-arr = weights
-plt.imshow(arr, origin='lower', interpolation='nearest', extent=extent, cmap=plt.cm.gray)#, alpha=0.1, )
-patch = matplotlib.patches.Ellipse((self.j, self.i), 2*a, 2*b, angle=theta, ec='k', fc='none')
-plt.gca().add_patch(patch)
-plt.plot(self.j, self.i, 'gx')
-plt.axvline(self.jmin, color='g')
-plt.axvline(self.jmax, color='g')
-plt.axhline(self.imin, color='g')
-plt.axhline(self.imax, color='g')
-plt.axis(extent)
+sum    npix mean    median min   max   var      stddev  rms
+437260 25   17490.4 17416  11847 23604 1.52e+07 3898.71 17919.7
 
 
 
+dec = np.radians(27.956443)
+
+scale = 1.00871  # arcsec / pix
+npix = 25
+area = 25.3892  # scale**2 * npix?
+
+sum_ = np.sum(z)
+err = np.sqrt(sum_)
+surf_bri = sum_ / area
+surf_err = err / area
+
+mean = np.mean(z)
+median = np.median(z)
+min_ = np.amin(z)
+max_ = np.amax(z)
+std = np.std(z)
+var = std**2
+rms = np.sqrt(np.mean(z**2))
 
 
-
-import matplotlib.patches
-
-e = matplotlib.patches.Ellipse((x0, y0), 2*a, 2*b, angle=theta)
-plt.gca().add_patch(e); plt.draw()
-v = e.get_verts()
-plt.plot(v[:,0], v[:,1], 'k-')
-
-e.center
-e.width
-e.height
-e.angle
-
-bbox = e.get_extents()
-e.get_verts
-
-e.contains_point
-e.get_path
-    contains_path
-    contains_point
-    contains_points
-    intersects_bbox
-    intersects_path
-
-    codes
-    get_extents
-    vertices
-    to_polygons
-
-    iter_segments
-
-
-e.contains_point((3,88, 1.66))  # False
-e.contains_point((3.88, 1.69))  # True; outside curve, inside polygon!
-e.contains_point((3.88, 1.72))  # True; outside curve, inside polygon!
-e.contains_point((3.88, 1.74))  # True
+intensity = z
+area = np.ones(z.shape)
 
 
